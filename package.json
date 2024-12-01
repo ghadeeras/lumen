@@ -1,0 +1,30 @@
+{
+  "name": "lumen",
+  "version": "0.1.0",
+  "description": "A thin wrapper around the WebGPU/WebGL APIs that adds type-safety + graphics-related utilities",
+  "repository": {
+    "url": "https://github.com/ghadeeras/lumen"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "npx tsc"
+  },
+  "keywords": [
+    "WebGPU",
+    "WebGL",
+    "Graphics",
+    "GPU"
+  ],
+  "author": "Ghadeer Abou-Saleh",
+  "license": "GPL-3.0",
+  "files": [
+    "lib",
+    "doc",
+    "index.js",
+    "index.d.ts"
+  ],
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@webgpu/types": "0.1.51"
+  }
+}
