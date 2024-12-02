@@ -1,4 +1,4 @@
-import { Device } from "./device"
+import { Device } from "./device.js"
 
 export type Descriptor = {
     [k in string]: Definition<any> | GPUObject | Descriptor

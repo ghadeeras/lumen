@@ -5,6 +5,10 @@
   "repository": {
     "url": "https://github.com/ghadeeras/lumen"
   },
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepare": "npx tsc"
@@ -18,10 +22,7 @@
   "author": "Ghadeer Abou-Saleh",
   "license": "GPL-3.0",
   "files": [
-    "lib",
-    "doc",
-    "index.js",
-    "index.d.ts"
+    "lib"
   ],
   "devDependencies": {
     "typescript": "^5.7.2",
