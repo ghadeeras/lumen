@@ -5,6 +5,8 @@
   "repository": {
     "url": "https://github.com/ghadeeras/lumen"
   },
+  "type": "module",
+  "exports": "./index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepare": "npx tsc"
