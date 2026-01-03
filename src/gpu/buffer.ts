@@ -99,7 +99,7 @@ export class Buffer implements Resource {
             size: upperMultipleOf(4, size),
             label: label
         }
-        return [this.device.device.createBuffer(descriptor), descriptor, size]
+        return [this.device.wrapped.createBuffer(descriptor), descriptor, size]
     }
 
     private newBuffer(label: string, data: DataView): [GPUBuffer, GPUBufferDescriptor, number] {
@@ -110,7 +110,7 @@ export class Buffer implements Resource {
             mappedAtCreation: true,
             label: label
         }
-        const buffer = this.device.device.createBuffer(descriptor)
+        const buffer = this.device.wrapped.createBuffer(descriptor)
         const range = buffer.getMappedRange(0, validSize)
         const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
         const dst = new Uint8Array(range, 0, data.byteLength)
@@ -155,7 +155,7 @@ export class Buffer implements Resource {
         const offsetCorrection = bufferOffset - validBufferOffset
         const validDataOffset = dataOffsetInBytes - offsetCorrection
         const validSize = upperMultipleOf(4, size + offsetCorrection)
-        this.device.device.queue.writeBuffer(this._buffer, validBufferOffset, data.buffer, validDataOffset, validSize)
+        this.device.wrapped.queue.writeBuffer(this._buffer, validBufferOffset, data.buffer, validDataOffset, validSize)
         return Promise.resolve(this)
     }
 

@@ -49,7 +49,7 @@ export class BindGroupLayout<L extends BindGroupLayoutEntries> extends GPUObject
             label,
             entries: entryList
         }
-        this.wrapped = device.device.createBindGroupLayout(this.descriptor)
+        this.wrapped = device.wrapped.createBindGroupLayout(this.descriptor)
     }
 
     static from<D extends BindGroupLayoutDescriptor>(descriptor: D) {
@@ -87,7 +87,7 @@ export class BindGroup<L extends BindGroupLayoutEntries> {
             layout: layout.wrapped,
             entries: entryList
         }
-        this.wrapped = layout.device.device.createBindGroup(this.descriptor)
+        this.wrapped = layout.device.wrapped.createBindGroup(this.descriptor)
     }
 
     static from<D extends BindGroupLayoutDescriptor>(descriptor: BindGroupDescriptor<D>) {

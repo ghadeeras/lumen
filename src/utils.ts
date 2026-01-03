@@ -10,11 +10,10 @@ export function failure<T>(message: string): T {
     throw new Error(message)
 }
 
-export function required<T>(value: T | null | undefined): T {
-    if (!value) {
-        throw new Error(`Required value is ${value}!`)
-    }
-    return value
+export function required<T>(value: T | null | undefined, message: (v: null | undefined) => string = v => `Required value is ${value}!`): T {
+    return value === null || value === undefined 
+        ? failure(message(value as (null | undefined))) 
+        : value
 }
 
 type Ref<T> = {

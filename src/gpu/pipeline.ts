@@ -22,7 +22,7 @@ export class PipelineLayout<L extends PipelineLayoutEntries> extends GPUObject {
     constructor(label: string, readonly device: Device, readonly entries: PipelineLayoutEntries, bindGroupLayouts: GPUBindGroupLayout[]) {
         super()
         this.descriptor = { label, bindGroupLayouts }
-        this.wrapped = device.device.createPipelineLayout(this.descriptor)
+        this.wrapped = device.wrapped.createPipelineLayout(this.descriptor)
     }
 
     static from<D extends PipelineLayoutDescriptor>(descriptor: D) {
@@ -61,7 +61,7 @@ export class ComputePipeline<L extends PipelineLayoutEntries> {
                 module: module.shaderModule,
             }
         }
-        this.wrapped = layout.device.device.createComputePipeline(this.descriptor)
+        this.wrapped = layout.device.wrapped.createComputePipeline(this.descriptor)
     }
 
     addTo(pass: GPUComputePassEncoder, groups: Partial<PipelineEntries<L>> = {}) {

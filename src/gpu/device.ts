@@ -1,4 +1,4 @@
-import { required, timeOut } from "../utils.js"
+import { failure, required, timeOut } from "../utils.js"
 import { BindGroupLayout, BindGroupLayoutEntries } from "./group.js"
 import { Buffer, SyncBuffer } from "./buffer.js"
 import { Canvas } from "./canvas.js"
@@ -9,10 +9,64 @@ import { Resource } from "./utils.js"
 import { PipelineLayout, PipelineLayoutEntries } from "./pipeline.js"
 import { GPUObject } from "./meta.js"
 
+export type DeviceDescriptor = {
+    gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
+    xrCompatible?: boolean
+}
+
 export class Device extends GPUObject {
 
-    constructor(readonly device: GPUDevice, readonly adapter: GPUAdapter) {
+    private destructionListeners: (() => void)[] = []
+    private recoveryListeners: (() => void)[] = []
+
+    constructor(private _wrapped: GPUDevice, private deviceDescriptor: DeviceDescriptor) {
         super()
+        this._wrapped.lost.then(info => this.handleDeviceLoss(info))
+    }
+
+    private async handleDeviceLoss(info: GPUDeviceLostInfo) {
+        const label = this._wrapped.label ?? 'unlabeled'
+        if (info.reason === "destroyed") {
+            console.info(`GPU Device '${label}' was lost because it was destroyed.`)
+            this.destructionListeners.forEach(listener => listener())
+        } else {
+            console.warn(`GPU Device '${label}' was lost because:`, info.message, ". Attempting to recover ...")
+            const { device, descriptor: _ } = await deviceAndDescriptor(this.deviceDescriptor)
+            this._wrapped = device
+            console.info(`GPU Device '${label}' was successfully recovered.`)
+            this.recoveryListeners.forEach(listener => listener())
+        }
+    }
+
+    get wrapped(): GPUDevice {
+        return this._wrapped
+    }
+    
+    /**
+     * @deprecated Use `wrapped` instead.
+     */
+    get device(): GPUDevice {
+        return this.wrapped
+    }
+
+    addDestructionListener(listener: () => void): () => void {
+        return this.addListener(listener, this.destructionListeners)
+    }
+
+    addRecoveryListener(listener: () => void): () => void {
+        return this.addListener(listener, this.recoveryListeners)
+    }
+
+    private addListener(listener: () => void, listeners: (() => void)[]) {
+        const safeListener = () => {
+            try {
+                listener()
+            } catch (e) {
+                console.error("Error in device listener: ", e)
+            }
+        }
+        listeners.push(safeListener)
+        return () => listeners.splice(listeners.indexOf(safeListener), 1)
     }
 
     async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
@@ -24,7 +78,7 @@ export class Device extends GPUObject {
         const rawShaderCode = await response.text()
         return await this.shaderModule(label, rawShaderCode, templateFunction)
     }
-    
+
     async shaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<ShaderModule> {
         const shaderCode = templateFunction(rawShaderCode)
         const shaderModule = new ShaderModule(label, this, shaderCode)
@@ -45,7 +99,7 @@ export class Device extends GPUObject {
     }
 
     enqueue(...commands: GPUCommandBuffer[]) {
-        this.device.queue.submit(commands)
+        this.wrapped.queue.submit(commands)
     }
     
     commands(name: string, ...encodings: ((encoder: CommandEncoder) => void)[]): GPUCommandBuffer[] {
@@ -92,7 +146,7 @@ export class Device extends GPUObject {
 
     bindGroup(bindGroupLayout: GPUBindGroupLayout, resources: (Resource | GPUBindingResource)[]) {
         const discriminator: Exclude<keyof Resource, keyof GPUBindingResource> = "asBindingResource"
-        return this.device.createBindGroup({
+        return this.wrapped.createBindGroup({
             layout: bindGroupLayout,
             entries: resources.map((resource, index) => ({
                 binding: index,
@@ -102,7 +156,7 @@ export class Device extends GPUObject {
     }
 
     suggestedGroupSizes() {
-        const limits = this.device.limits
+        const limits = this.wrapped.limits
         const wgs = Math.max(
             limits.maxComputeWorkgroupSizeX,
             limits.maxComputeWorkgroupSizeY,
@@ -129,20 +183,65 @@ export class Device extends GPUObject {
     
 
     async monitorErrors<T>(filter: GPUErrorFilter, expression: () => T): Promise<T> {
-        this.device.pushErrorScope(filter)
+        this.wrapped.pushErrorScope(filter)
         const result = expression()
-        const error = await this.device.popErrorScope()
+        const error = await this.wrapped.popErrorScope()
         if (error) {
             throw error
         }
         return result
     }    
 
-    static async instance(): Promise<Device> {
-        const gpu = required(navigator.gpu)
-        const adapter = required(await timeOut(gpu.requestAdapter(), 5000, "GPU Adapter"))
-        const device = required(await timeOut(adapter.requestDevice(), 5000, "GPU Device"))
-        return new Device(device, adapter)
+    static async instance(deviceDescriptor: DeviceDescriptor = {}): Promise<Device> {
+        var { device, descriptor } = await deviceAndDescriptor(deviceDescriptor)
+        return new Device(device, {
+            ...deviceDescriptor,
+            gpuDeviceDescriptor: async () => descriptor,
+        })
     }
 
 }
+
+async function deviceAndDescriptor(deviceDescriptor: DeviceDescriptor) {
+    const gpu = required(navigator.gpu, () => "WebGPU is not supported in this environment!")
+    const { gpuDeviceDescriptor, xrCompatible } = defaultedDescriptor(deviceDescriptor)
+    const adapter = await requestAdapter(gpu, xrCompatible)
+    var descriptor = await gpuDeviceDescriptor(adapter)
+    const device = await requestDevice(adapter, descriptor)
+    return { device, descriptor }
+}
+
+function defaultedDescriptor(descriptor: DeviceDescriptor): Required<DeviceDescriptor> {
+    return { 
+        gpuDeviceDescriptor: descriptor.gpuDeviceDescriptor ?? defaultGPUDeviceDescriptor,
+        xrCompatible: descriptor.xrCompatible ?? false
+    }
+}
+
+async function defaultGPUDeviceDescriptor(adapter: GPUAdapter): Promise<GPUDeviceDescriptor> {
+    return adapter.info.isFallbackAdapter
+        ? failure("The found GPU Adapter is a fallback one that may cause significant responsiveness problems!")
+        : {} as GPUDeviceDescriptor
+}
+
+async function requestAdapter(gpu: GPU, xrCompatible: boolean) {
+    const adapter = required(
+        await timeOut(gpu.requestAdapter({ xrCompatible }), 5000, "GPU Adapter"),
+        () => "No suitable GPU Adapter was found!"
+    )
+    console.debug("GPU Adapter Info:", adapter.info)
+    console.debug("GPU Adapter Features:", [...adapter.features])
+    console.debug("GPU Adapter Limits:", adapter.limits)
+    return adapter
+}
+
+async function requestDevice(adapter: GPUAdapter, deviceDescriptor: GPUDeviceDescriptor) {
+    const device = required(
+        await timeOut(adapter.requestDevice(deviceDescriptor), 5000, "GPU Device"),
+        () => "Failed to create a GPU Device!"
+    )
+    console.debug("GPU Device Features:", [...device.features])
+    console.debug("GPU Device Limits:", device.limits)
+    return device
+}
+

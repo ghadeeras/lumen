@@ -19,7 +19,7 @@ export class ShaderModule extends GPUObject {
     constructor(label: string, readonly device: Device, code: string) {
         super()
         this.descriptor = { code, label };
-        this.shaderModule = this.device.device.createShaderModule(this.descriptor)
+        this.shaderModule = this.device.wrapped.createShaderModule(this.descriptor)
         if (this.shaderModule === null) {
             throw new Error("Module compilation failed!")
         }
@@ -53,7 +53,7 @@ export class ShaderModule extends GPUObject {
     }
 
     computePipeline(entryPoint: string, layout: GPUPipelineLayout | "auto" = "auto") {
-        return this.device.device.createComputePipeline({
+        return this.device.wrapped.createComputePipeline({
             compute: { 
                 module: this.shaderModule,
                 entryPoint: entryPoint, 

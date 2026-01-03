@@ -6,7 +6,7 @@ export class Texture {
     private _texture: GPUTexture
 
     constructor(readonly device: Device, readonly descriptor: GPUTextureDescriptor) {
-        this._texture = this.device.device.createTexture(descriptor)
+        this._texture = this.device.wrapped.createTexture(descriptor)
     }
 
     get texture() {
@@ -29,7 +29,7 @@ export class Texture {
     resize(size: GPUExtent3DDictStrict) {
         this.descriptor.size = size
         this._texture.destroy()
-        this._texture = this.device.device.createTexture(this.descriptor)
+        this._texture = this.device.wrapped.createTexture(this.descriptor)
     }
 
     depthState(state: Partial<GPUDepthStencilState> = {}): GPUDepthStencilState {
@@ -104,7 +104,7 @@ export class Sampler implements Resource {
     readonly sampler: GPUSampler
 
     constructor(readonly device: Device, readonly descriptor: GPUSamplerDescriptor | undefined = undefined) {
-        this.sampler = this.device.device.createSampler(descriptor)
+        this.sampler = this.device.wrapped.createSampler(descriptor)
     }
    
     asBindingResource(): GPUBindingResource {

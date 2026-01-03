@@ -23,7 +23,7 @@ export class Canvas {
         }
 
         this.configs = {
-            device: device.device,
+            device: device.wrapped,
             format: configs.format ?? navigator.gpu.getPreferredCanvasFormat(),
             usage: configs.usage ?? GPUTextureUsage.RENDER_ATTACHMENT,
             alphaMode: configs.alphaMode ?? "opaque",

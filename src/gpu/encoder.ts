@@ -7,7 +7,7 @@ export class CommandEncoder {
 
     constructor(label: string, readonly device: Device) {
         this.descriptor = { label }
-        this.encoder = this.device.device.createCommandEncoder(this.descriptor)
+        this.encoder = this.device.wrapped.createCommandEncoder(this.descriptor)
     }
 
     finish(): GPUCommandBuffer {
