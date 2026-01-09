@@ -1,12 +1,16 @@
 import { Device } from "./device.js"
 import { formatOf, Resource } from "./utils.js"
 
-export class Texture {
+export class Texture implements Resource {
 
     private _texture: GPUTexture
 
     constructor(readonly device: Device, readonly descriptor: GPUTextureDescriptor) {
         this._texture = this.device.wrapped.createTexture(descriptor)
+    }
+
+    asBindingResource(): GPUBindingResource {
+        return this._texture
     }
 
     get texture() {

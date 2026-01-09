@@ -1,130 +1,107 @@
-import { KeyOfType } from "../utils.js";
+import { Only, IfSet, Redefine } from "../utils.js";
 import { Buffer, SyncBuffer } from "./buffer.js";
 import { Device } from "./device.js";
-import { Definition, GPUObject } from "./meta.js";
 import { PipelineLayoutEntry } from "./pipeline.js";
-import { Sampler, TextureView } from "./texture.js";
+import { Sampler, Texture, TextureView } from "./texture.js";
 
-export type BindGroupDescriptor<L extends BindGroupLayoutDescriptor> = {
-    layout: Definition<BindGroupLayout<L["entries"]>>,
-    entries: BindGroupEntries<L["entries"]>
+/*
+ * Bind Group types
+ */
+export type BindGroups<L extends BindGroupLayoutDescriptor, D extends BindGroupDescriptors<L>> = {
+    [k in keyof D]: BindGroup<L>
+} 
+export type BindGroupDescriptors<D extends BindGroupLayoutDescriptor> = Record<string, BindGroupDescriptor<D>>;
+export type BindGroupDescriptor<D extends BindGroupLayoutDescriptor> = {
+    entries: BindGroupEntries<D>
 }
-export type BindGroupEntries<L extends BindGroupLayoutEntries> = {
-    [k in keyof L] : BindGroupResource<InferResourceType<L[k]>>
+export type BindGroupEntries<D extends BindGroupLayoutDescriptor> = {
+    [k in keyof D["entries"]]: BindGroupResource<D["entries"][k]>
 }
-export type BindGroupResource<T extends ResourceType> = 
-    T extends "buffer" ? (SyncBuffer | Buffer) :
-    T extends "texture" ? TextureView :
-    T extends "storageTexture" ? TextureView :
-    T extends "externalTexture" ? TextureView :
-    T extends "sampler" ? Sampler :
-    never
-export type InferResourceType<E extends GPUBindGroupLayoutEntry> = 
-    E extends BindGroupLayoutEntry<infer T> ? T : 
-    never
+export type BindGroupResource<T extends BindGroupLayoutEntry> = 
+      IfSet<T, "buffer", SyncBuffer | Buffer> 
+    | IfSet<T, "texture", TextureView | Texture> 
+    | IfSet<T, "storageTexture", TextureView | Texture> 
+    | IfSet<T, "externalTexture", TextureView | Texture> 
+    | IfSet<T, "sampler", Sampler>
 
+/*
+ * Bind Group "Layout" types
+ */
+export type BindGroupLayouts<D extends BindGroupLayoutDescriptors> = {
+    [k in keyof D]: BindGroupLayout<D[k]>
+}
+export type BindGroupLayoutDescriptors = Record<string, BindGroupLayoutDescriptor>;
 export type BindGroupLayoutDescriptor = {
-    entries: BindGroupLayoutEntries
+    entries: Record<string, BindGroupLayoutEntry>
 }
-export type BindGroupLayoutEntries = Record<string, BindGroupLayoutEntry<any>>
-export type BindGroupLayoutEntry<T extends ResourceType> = 
-      BindGroupResourceBinding 
-    & BindGroupResourceLayout<T>
+export type BindGroupLayoutEntry = 
+      BindGroupResourceLayout<"buffer">
+    | BindGroupResourceLayout<"texture">
+    | BindGroupResourceLayout<"storageTexture">
+    | BindGroupResourceLayout<"externalTexture">
+    | BindGroupResourceLayout<"sampler">
+export type BindGroupResourceLayout<T extends ResourceType> = Only<
+    Required<Redefine<GPUBindGroupLayoutEntry, "visibility", (keyof typeof GPUShaderStage)[]>>, 
+    T | BindingAttributes
+>
+export type BindingAttributes = Exclude<keyof GPUBindGroupLayoutEntry, ResourceType>
 export type ResourceType = "buffer" | "texture" | "storageTexture" | "externalTexture" | "sampler"
-export type BindGroupResourceBinding = Omit<GPUBindGroupLayoutEntry, ResourceType>;
-export type BindGroupResourceLayout<T extends ResourceType> = Pick<Required<GPUBindGroupLayoutEntry>, T>
 
-export class BindGroupLayout<L extends BindGroupLayoutEntries> extends GPUObject {
+export class BindGroupLayout<D extends BindGroupLayoutDescriptor> {
 
     readonly wrapped: GPUBindGroupLayout
-    readonly descriptor: GPUBindGroupLayoutDescriptor
 
-    constructor(label: string, readonly device: Device, readonly entries: L) {
-        super()
+    constructor(readonly device: Device, readonly label: string, readonly descriptor: D) {
         const entryList: GPUBindGroupLayoutEntry[] = [];
-        for (const key of Object.keys(entries)) {
-            entryList.push(entries[key])
+        for (const key of Object.keys(descriptor.entries)) {
+            const entry = descriptor.entries[key]
+            const newEntry = {
+                ...entry,
+                visibility: entry.visibility.map(s => GPUShaderStage[s]).reduce((a, b) => a | b, 0)
+            }
+            entryList.push(newEntry)
         }
-        this.descriptor = {
+        this.wrapped = device.wrapped.createBindGroupLayout({
             label,
             entries: entryList
-        }
-        this.wrapped = device.wrapped.createBindGroupLayout(this.descriptor)
-    }
-
-    static from<D extends BindGroupLayoutDescriptor>(descriptor: D) {
-        return new Definition((device, label) => new BindGroupLayout<D["entries"]>(label, device, descriptor.entries))
-    }
-
-    instance(label: string, entries: BindGroupEntries<L>): BindGroup<L> {
-        return new BindGroup(label, this, entries)
-    }
-
-    asGroup(group: number): PipelineLayoutEntry<BindGroupLayout<L>> {
-        return {
-            group,
-            layout: this.definition()
-        }
-    }
-
-}
-
-export class BindGroup<L extends BindGroupLayoutEntries> {
-
-    readonly wrapped: GPUBindGroup
-    readonly descriptor: GPUBindGroupDescriptor
-
-    constructor(label: string, readonly layout: BindGroupLayout<L>, readonly entries: BindGroupEntries<L>) {
-        const entryList: GPUBindGroupEntry[] = [];
-        for (const key of Object.keys(entries)) {
-            entryList.push({
-                binding: layout.entries[key].binding,
-                resource: entries[key].asBindingResource()
-            })
-        }
-        this.descriptor = {
-            label: `${layout.descriptor.label}@${label}`,
-            layout: layout.wrapped,
-            entries: entryList
-        }
-        this.wrapped = layout.device.wrapped.createBindGroup(this.descriptor)
-    }
-
-    static from<D extends BindGroupLayoutDescriptor>(descriptor: BindGroupDescriptor<D>) {
-        return new Definition(async (device, label) => {
-            const layout = await descriptor.layout.create(device, `${label}.layout`)
-            return new BindGroup<D["entries"]>(label, layout, descriptor.entries)
         })
     }
 
+    instance(label: string, descriptor: BindGroupDescriptor<D>): BindGroup<D> {
+        return new BindGroup(label, this, descriptor)
+    }
+
+    instances<G extends BindGroupDescriptors<D>>(descriptors: G): BindGroups<D, G> {
+        const result: Partial<BindGroups<D, G>> = {}
+        for (const key in descriptors) {
+            result[key] = this.instance(key, descriptors[key])
+        }
+        return result as BindGroups<D, G>
+    }
+
+    asEntry(group: number): PipelineLayoutEntry<D> {
+        return { layout: this, group }
+    }
+
 }
 
-export function buffer(type: GPUBufferBindingType): BindGroupResourceLayout<"buffer"> {
-    return {
-        buffer: { type }
-    }
-}
+export class BindGroup<D extends BindGroupLayoutDescriptor> {
 
-export function texture(sampleType: GPUTextureSampleType, viewDimension: GPUTextureViewDimension = "2d", multisampled: boolean = false): BindGroupResourceLayout<"texture"> {
-    return {
-        texture: { sampleType, viewDimension, multisampled }
-    }
-}
+    readonly wrapped: GPUBindGroup
 
-export function storageTexture(format: GPUTextureFormat, viewDimension: GPUTextureViewDimension = "2d", multisampled: boolean = false): BindGroupResourceLayout<"storageTexture"> {
-    return {
-        storageTexture: { format, viewDimension, access: "write-only" }
+    constructor(readonly label: string, readonly layout: BindGroupLayout<D>, readonly descriptor: BindGroupDescriptor<D>) {
+        const entryList: GPUBindGroupEntry[] = [];
+        for (const key of Object.keys(descriptor.entries)) {
+            entryList.push({
+                binding: layout.descriptor.entries[key].binding,
+                resource: descriptor.entries[key].asBindingResource()
+            })
+        }
+        this.wrapped = layout.device.wrapped.createBindGroup({
+            label: `${layout.label}@${label}`,
+            layout: layout.wrapped,
+            entries: entryList
+        })
     }
-}
 
-export function sampler(type: GPUSamplerBindingType): BindGroupResourceLayout<"sampler"> {
-    return {
-        sampler: { type }
-    }
-}
-
-export function binding<T extends ResourceType>(binding: number, visibility: KeyOfType<number, typeof GPUShaderStage>[], resource: BindGroupResourceLayout<T>): BindGroupLayoutEntry<T> {
-    return {
-        binding, visibility: visibility.map(v => GPUShaderStage[v]).reduce((v1, v2) => v1 | v2), ...resource
-    }
 }

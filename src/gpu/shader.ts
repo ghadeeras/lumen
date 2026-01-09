@@ -1,38 +1,32 @@
+import { Only } from "../utils.js";
 import { Device } from "./device.js";
-import { Definition, GPUObject } from "./meta.js";
-import { asColorTargetState, TextureFormatSource, CaseObject } from "./utils.js";
+import { asColorTargetState, TextureFormatSource } from "./utils.js";
 
-export type ShaderModuleCode = 
-      CaseObject<"path" | "code", "path", string>
-    | CaseObject<"path" | "code", "code", string>
-
+export type ShaderModules<D extends ShaderModuleDescriptors> = {
+    [k in keyof D]: ShaderModule
+}
+export type ShaderModuleDescriptors = Record<string, ShaderModuleDescriptor>
 export type ShaderModuleDescriptor = ShaderModuleCode & {
     compilationHints?: Array<GPUShaderModuleCompilationHint>;
     templateFunction?: (code: string) => string
 }
+export type ShaderModuleCode = Only<ShaderModuleCodeAttributes, "path"> | Only<ShaderModuleCodeAttributes, "code">
+type ShaderModuleCodeAttributes = {
+    path: string
+    code: string
+}
 
-export class ShaderModule extends GPUObject {
+export class ShaderModule {
 
     readonly shaderModule: GPUShaderModule
     readonly descriptor: Readonly<GPUShaderModuleDescriptor>
 
     constructor(label: string, readonly device: Device, code: string) {
-        super()
         this.descriptor = { code, label };
         this.shaderModule = this.device.wrapped.createShaderModule(this.descriptor)
         if (this.shaderModule === null) {
             throw new Error("Module compilation failed!")
         }
-    }
-
-    static from(descriptor: ShaderModuleDescriptor) {
-        return new Definition((device, label) => ShaderModule.create(descriptor, device, label))
-    }
-
-    static async create(descriptor: ShaderModuleDescriptor, device: Device, label: string): Promise<ShaderModule> {
-        return descriptor.path !== undefined
-            ? await device.labeledShaderModule(label, descriptor.path, descriptor.templateFunction)
-            : await device.shaderModule(label, descriptor.code, descriptor.templateFunction);
     }
 
     async hasCompilationErrors() {
@@ -137,50 +131,4 @@ export const renderingShaders = {
         }  
     `)
     
-}
-
-export type AppShaders<S extends AppShadersRecord> = {
-    [k in keyof S]: ShaderModule
-}
-
-export type AppShadersRecord = Record<string, AppShaderRecord>
-
-export type AppShaderRecord = {
-    path: string, code?: never
-} | {
-    code: string, path?: never
-}
-
-export class AppShadersBuilder {
-
-    constructor(private label: string) {}
-
-    withShaders<S extends AppShadersRecord>(shaders: S): AppShadersBuilderWithShaders<S> {
-        return new AppShadersBuilderWithShaders<S>(this.label, shaders)
-    }
-
-}
-
-export class AppShadersBuilderWithShaders<S extends AppShadersRecord> {
-
-    constructor(private label: string, private shaders: S) {}
-
-    async build(device: Device, rootPath: string = ".", processor: (code: string, path?: string | null) => string = code => code): Promise<AppShaders<S>> {
-        const result: Partial<AppShaders<S>> = {}
-        for (const k of Object.keys(this.shaders)) {
-            const shader = this.shaders[k]
-            const label = `${this.label}.shaders.${k}`
-            const templateFunction = (code: string) => processor(code, rootPath)
-            result[k as keyof S] = await (typeof shader.path == 'string' 
-                ? device.labeledShaderModule(label, shader.path, templateFunction, rootPath)
-                : device.shaderModule(label, shader.code, templateFunction)
-            )
-        }
-        return result as AppShaders<S>
-    }
-
-}
-
-export function appShadersBuilder(label: string): AppShadersBuilder {
-    return new AppShadersBuilder(label)
 }

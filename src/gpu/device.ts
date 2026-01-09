@@ -1,26 +1,23 @@
 import { failure, required, timeOut } from "../utils.js"
-import { BindGroupLayout, BindGroupLayoutEntries } from "./group.js"
+import { BindGroupLayout, BindGroupLayouts, BindGroupLayoutDescriptor, BindGroupLayoutDescriptors } from "./group.js"
 import { Buffer, SyncBuffer } from "./buffer.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
-import { ShaderModule } from "./shader.js"
+import { ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptors, ShaderModules } from "./shader.js"
 import { Texture, Sampler } from "./texture.js"
-import { Resource } from "./utils.js"
-import { PipelineLayout, PipelineLayoutEntries } from "./pipeline.js"
-import { GPUObject } from "./meta.js"
+import { PipelineLayout, PipelineLayoutDescriptor, PipelineLayoutDescriptors, PipelineLayouts } from "./pipeline.js"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
     xrCompatible?: boolean
 }
 
-export class Device extends GPUObject {
+export class Device {
 
     private destructionListeners: (() => void)[] = []
     private recoveryListeners: (() => void)[] = []
 
     constructor(private _wrapped: GPUDevice, private deviceDescriptor: DeviceDescriptor) {
-        super()
         this._wrapped.lost.then(info => this.handleDeviceLoss(info))
     }
 
@@ -69,17 +66,31 @@ export class Device extends GPUObject {
         return () => listeners.splice(listeners.indexOf(safeListener), 1)
     }
 
-    async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
-        return await this.labeledShaderModule(relativePath, relativePath, templateFunction, basePath)
-    }
-    
-    async labeledShaderModule(label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
-        const response = await fetch(`${basePath}/${relativePath}`, { method : "get", mode : "no-cors" })
-        const rawShaderCode = await response.text()
-        return await this.shaderModule(label, rawShaderCode, templateFunction)
+    async shaderModules<D extends ShaderModuleDescriptors>(descriptors: D): Promise<ShaderModules<D>> {
+        const result: Partial<ShaderModules<D>> = {}
+        for (const k in descriptors) {
+            result[k] = await this.shaderModule(k, descriptors[k])
+        }
+        return result as ShaderModules<D>
     }
 
-    async shaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<ShaderModule> {
+    async shaderModule(label: string, descriptor: ShaderModuleDescriptor): Promise<ShaderModule> {
+        return descriptor.path !== undefined
+            ? await this.remoteShaderModule(label, descriptor.path, descriptor.templateFunction)
+            : await this.inMemoryShaderModule(label, descriptor.code, descriptor.templateFunction);
+    }
+
+    async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
+        return await this.remoteShaderModule(relativePath, relativePath, templateFunction, basePath)
+    }
+    
+    async remoteShaderModule(label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
+        const response = await fetch(`${basePath}/${relativePath}`, { method : "get", mode : "no-cors" })
+        const rawShaderCode = await response.text()
+        return await this.inMemoryShaderModule(label, rawShaderCode, templateFunction)
+    }
+
+    async inMemoryShaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<ShaderModule> {
         const shaderCode = templateFunction(rawShaderCode)
         const shaderModule = new ShaderModule(label, this, shaderCode)
 
@@ -136,23 +147,28 @@ export class Device extends GPUObject {
             SyncBuffer.create(label, this, usage, dataOrSize) 
     }
 
-    groupLayout<L extends BindGroupLayoutEntries>(label: string, entries: L): BindGroupLayout<L> {
-        return new BindGroupLayout(label, this, entries)
+    groupLayouts<D extends BindGroupLayoutDescriptors>(descriptors: D): BindGroupLayouts<D> {
+        const result: Partial<BindGroupLayouts<D>> = {}
+        for (const k in descriptors) {
+            result[k] = this.groupLayout(k, descriptors[k])
+        }
+        return result as BindGroupLayouts<D>
     }
 
-    async pipelineLayout<L extends PipelineLayoutEntries>(label: string, entries: L): Promise<PipelineLayout<L>> {
-        return await PipelineLayout.create(this, label, { bindGroupLayouts: entries })
+    groupLayout<D extends BindGroupLayoutDescriptor>(label: string, descriptor: D): BindGroupLayout<D> {
+        return new BindGroupLayout(this, label, descriptor)
     }
 
-    bindGroup(bindGroupLayout: GPUBindGroupLayout, resources: (Resource | GPUBindingResource)[]) {
-        const discriminator: Exclude<keyof Resource, keyof GPUBindingResource> = "asBindingResource"
-        return this.wrapped.createBindGroup({
-            layout: bindGroupLayout,
-            entries: resources.map((resource, index) => ({
-                binding: index,
-                resource: discriminator in resource ? resource.asBindingResource() : resource,
-            }))
-        })
+    pipelineLayouts<D extends PipelineLayoutDescriptors>(descriptors: D): PipelineLayouts<D> {
+        const result: Partial<PipelineLayouts<D>> = {}
+        for (const k in descriptors) {
+            result[k] = this.pipelineLayout(k, descriptors[k])
+        }
+        return result as PipelineLayouts<D>
+    }
+
+    pipelineLayout<D extends PipelineLayoutDescriptor>(label: string, descriptor: D): PipelineLayout<D> {
+        return new PipelineLayout(this, label, descriptor)
     }
 
     suggestedGroupSizes() {

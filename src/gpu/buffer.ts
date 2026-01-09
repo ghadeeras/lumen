@@ -1,4 +1,4 @@
-import { required, StrictOmit } from "../utils.js"
+import { required } from "../utils.js"
 import { Device } from "./device.js"
 import { CommandEncoder } from "./encoder.js"
 import { Element } from "./types.js"
@@ -53,7 +53,7 @@ export class Buffer implements Resource {
         this._buffer.destroy()
     }
 
-    asBindingResource(binding: StrictOmit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
+    asBindingResource(binding: Omit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
         return {
             ...binding,
             buffer: this._buffer,
@@ -179,7 +179,7 @@ export class SyncBuffer implements Resource {
         this.dirtyRange = [cpuBuffer.byteLength, 0]
     }
 
-    asBindingResource(binding: StrictOmit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
+    asBindingResource(binding: Omit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
         return this.gpuBuffer.asBindingResource(binding)
     }
 
