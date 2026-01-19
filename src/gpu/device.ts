@@ -1,11 +1,11 @@
-import { failure, required, timeOut } from "../utils.js"
-import { BindGroupLayout, BindGroupLayouts, BindGroupLayoutDescriptor, BindGroupLayoutDescriptors } from "./group.js"
-import { Buffer, SyncBuffer } from "./buffer.js"
+import * as utl from "../utils.js"
+import * as pln from "./pipeline.js"
+import * as shd from "./shader.js"
+import * as grp from "./group.js"
+import * as buf from "./buffer.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
-import { ShaderModule, ShaderModuleDescriptor, ShaderModuleDescriptors, ShaderModules } from "./shader.js"
 import { Texture, Sampler } from "./texture.js"
-import { PipelineLayout, PipelineLayoutDescriptor, PipelineLayoutDescriptors, PipelineLayouts } from "./pipeline.js"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
@@ -66,33 +66,33 @@ export class Device {
         return () => listeners.splice(listeners.indexOf(safeListener), 1)
     }
 
-    async shaderModules<D extends ShaderModuleDescriptors>(descriptors: D): Promise<ShaderModules<D>> {
-        const result: Partial<ShaderModules<D>> = {}
+    async shaderModules<D extends shd.ShaderModuleDescriptors>(descriptors: D): Promise<shd.ShaderModules<D>> {
+        const result: Partial<shd.ShaderModules<D>> = {}
         for (const k in descriptors) {
             result[k] = await this.shaderModule(k, descriptors[k])
         }
-        return result as ShaderModules<D>
+        return result as shd.ShaderModules<D>
     }
 
-    async shaderModule(label: string, descriptor: ShaderModuleDescriptor): Promise<ShaderModule> {
+    async shaderModule(label: string, descriptor: shd.ShaderModuleDescriptor): Promise<shd.ShaderModule> {
         return descriptor.path !== undefined
             ? await this.remoteShaderModule(label, descriptor.path, descriptor.templateFunction)
             : await this.inMemoryShaderModule(label, descriptor.code, descriptor.templateFunction);
     }
 
-    async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
+    async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<shd.ShaderModule> {
         return await this.remoteShaderModule(relativePath, relativePath, templateFunction, basePath)
     }
     
-    async remoteShaderModule(label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<ShaderModule> {
+    async remoteShaderModule(label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<shd.ShaderModule> {
         const response = await fetch(`${basePath}/${relativePath}`, { method : "get", mode : "no-cors" })
         const rawShaderCode = await response.text()
         return await this.inMemoryShaderModule(label, rawShaderCode, templateFunction)
     }
 
-    async inMemoryShaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<ShaderModule> {
+    async inMemoryShaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<shd.ShaderModule> {
         const shaderCode = templateFunction(rawShaderCode)
-        const shaderModule = new ShaderModule(label, this, shaderCode)
+        const shaderModule = new shd.ShaderModule(label, this, shaderCode)
 
         if (await shaderModule.hasCompilationErrors()) {
             throw new Error("Module compilation failed!")
@@ -135,40 +135,76 @@ export class Device {
         return new Sampler(this, descriptor)
     }
 
-    buffer(label: string, usage: GPUBufferUsageFlags, dataOrSize: DataView | number, stride = 0): Buffer {
-        return stride > 0 ? 
-            new Buffer(label, this, usage, dataOrSize, stride) : 
-            new Buffer(label, this, usage, dataOrSize) 
+    dataBuffers<D extends buf.DataBufferDescriptors>(descriptors: D): buf.DataBuffers<D> {
+        const result: Partial<buf.DataBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = this.dataBuffer(k, descriptors[k]);
+        }
+        return result as buf.DataBuffers<D>;
     }
 
-    syncBuffer(label: string, usage: GPUBufferUsageFlags, dataOrSize: DataView | number, stride = 0): SyncBuffer {
-        return stride > 0 ? 
-            SyncBuffer.create(label, this, usage, dataOrSize, stride) : 
-            SyncBuffer.create(label, this, usage, dataOrSize) 
+    dataBuffer(label: string, descriptor: buf.DataBufferDescriptor): buf.DataBuffer {
+        return new buf.DataBuffer(label, this, descriptor);
     }
 
-    groupLayouts<D extends BindGroupLayoutDescriptors>(descriptors: D): BindGroupLayouts<D> {
-        const result: Partial<BindGroupLayouts<D>> = {}
+    readBuffers<D extends buf.ReadBufferDescriptors>(descriptors: D): buf.ReadBuffers<D> {
+        const result: Partial<buf.ReadBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = this.readBuffer(k, descriptors[k]);
+        }
+        return result as buf.ReadBuffers<D>;
+    }
+
+    readBuffer(label: string, size: number): buf.ReadBuffer {
+        return new buf.ReadBuffer(label, this, size);
+    }
+
+    writeBuffers<D extends buf.WriteBufferDescriptors>(descriptors: D): buf.WriteBuffers<D> {
+        const result: Partial<buf.WriteBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = this.writeBuffer(k, descriptors[k]);
+        }
+        return result as buf.WriteBuffers<D>;
+    }
+
+    writeBuffer(label: string, data: DataView): buf.WriteBuffer {
+        return new buf.WriteBuffer(label, this, data);
+    }
+
+    syncBuffers<D extends buf.DataBufferDescriptors>(descriptors: D): buf.SyncBuffers<D> {
+        const result: Partial<buf.SyncBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = this.syncBuffer(k, descriptors[k]);
+        }
+        return result as buf.SyncBuffers<D>;
+    }
+
+    syncBuffer(label: string, descriptor: buf.DataBufferDescriptor): buf.SyncBuffer {
+        return buf.SyncBuffer.create(label, this, descriptor);
+    }
+
+    groupLayouts<D extends grp.BindGroupLayoutDescriptors>(descriptors: D): grp.BindGroupLayouts<D> {
+        const result: Partial<grp.BindGroupLayouts<D>> = {}
         for (const k in descriptors) {
             result[k] = this.groupLayout(k, descriptors[k])
         }
-        return result as BindGroupLayouts<D>
+        return result as grp.BindGroupLayouts<D>
     }
 
-    groupLayout<D extends BindGroupLayoutDescriptor>(label: string, descriptor: D): BindGroupLayout<D> {
-        return new BindGroupLayout(this, label, descriptor)
+    groupLayout<D extends grp.BindGroupLayoutDescriptor>(label: string, descriptor: D): grp.BindGroupLayout<D> {
+        return new grp.BindGroupLayout(this, label, descriptor)
     }
 
-    pipelineLayouts<D extends PipelineLayoutDescriptors>(descriptors: D): PipelineLayouts<D> {
-        const result: Partial<PipelineLayouts<D>> = {}
+    pipelineLayouts<D extends pln.PipelineLayoutDescriptors>(descriptors: D): pln.PipelineLayouts<D> {
+        const result: Partial<pln.PipelineLayouts<D>> = {}
         for (const k in descriptors) {
             result[k] = this.pipelineLayout(k, descriptors[k])
         }
-        return result as PipelineLayouts<D>
+        return result as pln.PipelineLayouts<D>
     }
 
-    pipelineLayout<D extends PipelineLayoutDescriptor>(label: string, descriptor: D): PipelineLayout<D> {
-        return new PipelineLayout(this, label, descriptor)
+    pipelineLayout<D extends pln.PipelineLayoutDescriptor>(label: string, descriptor: D): pln.PipelineLayout<D> {
+        return new pln.PipelineLayout(this, label, descriptor)
     }
 
     suggestedGroupSizes() {
@@ -219,7 +255,7 @@ export class Device {
 }
 
 async function deviceAndDescriptor(deviceDescriptor: DeviceDescriptor) {
-    const gpu = required(navigator.gpu, () => "WebGPU is not supported in this environment!")
+    const gpu = utl.required(navigator.gpu, () => "WebGPU is not supported in this environment!")
     const { gpuDeviceDescriptor, xrCompatible } = defaultedDescriptor(deviceDescriptor)
     const adapter = await requestAdapter(gpu, xrCompatible)
     var descriptor = await gpuDeviceDescriptor(adapter)
@@ -236,13 +272,13 @@ function defaultedDescriptor(descriptor: DeviceDescriptor): Required<DeviceDescr
 
 async function defaultGPUDeviceDescriptor(adapter: GPUAdapter): Promise<GPUDeviceDescriptor> {
     return adapter.info.isFallbackAdapter
-        ? failure("The found GPU Adapter is a fallback one that may cause significant responsiveness problems!")
+        ? utl.failure("The found GPU Adapter is a fallback one that may cause significant responsiveness problems!")
         : {} as GPUDeviceDescriptor
 }
 
 async function requestAdapter(gpu: GPU, xrCompatible: boolean) {
-    const adapter = required(
-        await timeOut(gpu.requestAdapter({ xrCompatible }), 5000, "GPU Adapter"),
+    const adapter = utl.required(
+        await utl.timeOut(gpu.requestAdapter({ xrCompatible }), 5000, "GPU Adapter"),
         () => "No suitable GPU Adapter was found!"
     )
     console.debug("GPU Adapter Info:", adapter.info)
@@ -252,8 +288,8 @@ async function requestAdapter(gpu: GPU, xrCompatible: boolean) {
 }
 
 async function requestDevice(adapter: GPUAdapter, deviceDescriptor: GPUDeviceDescriptor) {
-    const device = required(
-        await timeOut(adapter.requestDevice(deviceDescriptor), 5000, "GPU Device"),
+    const device = utl.required(
+        await utl.timeOut(adapter.requestDevice(deviceDescriptor), 5000, "GPU Device"),
         () => "Failed to create a GPU Device!"
     )
     console.debug("GPU Device Features:", [...device.features])

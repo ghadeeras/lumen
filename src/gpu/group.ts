@@ -1,5 +1,5 @@
 import { Only, IfSet, Redefine } from "../utils.js";
-import { Buffer, SyncBuffer } from "./buffer.js";
+import { DataBuffer, SyncBuffer } from "./buffer.js";
 import { Device } from "./device.js";
 import { PipelineLayoutEntry } from "./pipeline.js";
 import { Sampler, Texture, TextureView } from "./texture.js";
@@ -18,7 +18,7 @@ export type BindGroupEntries<D extends BindGroupLayoutDescriptor> = {
     [k in keyof D["entries"]]: BindGroupResource<D["entries"][k]>
 }
 export type BindGroupResource<T extends BindGroupLayoutEntry> = 
-      IfSet<T, "buffer", SyncBuffer | Buffer> 
+      IfSet<T, "buffer", SyncBuffer | DataBuffer> 
     | IfSet<T, "texture", TextureView | Texture> 
     | IfSet<T, "storageTexture", TextureView | Texture> 
     | IfSet<T, "externalTexture", TextureView | Texture> 

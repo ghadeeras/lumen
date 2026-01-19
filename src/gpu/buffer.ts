@@ -1,181 +1,15 @@
-import { required } from "../utils.js"
-import { Device } from "./device.js"
-import { CommandEncoder } from "./encoder.js"
-import { Element } from "./types.js"
-import { Resource } from "./utils.js"
+import { ReplaceValues, StrictExclude } from "../utils.js";
+import { Device } from "./device.js";
+import { DataSegment, Element } from "./types.js";
+import { Resource } from "./utils.js";
 
-type Writer = (bufferOffset: number, data: DataView, dataOffset: number, size: number) => Promise<Buffer>
-type Reader = (bufferOffset: number, data: DataView, dataOffset: number, size: number) => Promise<DataView>
-
-export class Buffer implements Resource {
-
-    private _buffer: GPUBuffer
-    private _descriptor: GPUBufferDescriptor
-    private _size: number
-    private _strideCount: number
-    
-    private writer: Writer
-    private reader: Reader
-
-    constructor(label: string, readonly device: Device, readonly usage: GPUBufferUsageFlags, dataOrSize: DataView | number, readonly stride: number = size(dataOrSize)) {
-        [this._buffer, this._descriptor, this._size] = typeof dataOrSize === 'number' ?
-            this.newBlankBuffer(label, dataOrSize) :
-            this.newBuffer(label, dataOrSize)
-
-        this._strideCount = Math.ceil(this._size / stride)
-
-        this.writer = (usage & GPUBufferUsage.MAP_WRITE) != 0 ?
-            (bufferOffset, data, dataOffset, size) => this.writeToMapWriteBuffer(bufferOffset, data, dataOffset, size) :
-            (bufferOffset, data, dataOffset, size) => this.writeToCopyDstBuffer(bufferOffset, data, dataOffset, size)
-
-        this.reader = (usage & GPUBufferUsage.MAP_READ) != 0 ?
-            (bufferOffset, data, dataOffset, size) => this.readFromMapReadBuffer(bufferOffset, data, dataOffset, size) :
-            (bufferOffset, data, dataOffset, size) => this.readFromCopySrcBuffer(bufferOffset, data, dataOffset, size)
-    }
-
-    get buffer(): GPUBuffer {
-        return this._buffer
-    }
-
-    get descriptor(): Readonly<GPUBufferDescriptor> {
-        return this._descriptor
-    }
-
-    get label() {
-        return required(this._descriptor.label)
-    }
-
-    get stridesCount(): number {
-        return this._strideCount
-    }
-
-    destroy() {
-        this._buffer.destroy()
-    }
-
-    asBindingResource(binding: Omit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
-        return {
-            ...binding,
-            buffer: this._buffer,
-        }
-    }
-    
-    setData(data: DataView) {
-        this._size = data.byteLength
-        this._strideCount = Math.ceil(this._size / this.stride)
-        if (this._size > this._descriptor.size) {
-            this._buffer.destroy();
-            [this._buffer, this._descriptor] = this.newBuffer(this.label, data)
-        } else {
-            this.writeAt(0, data)
-        }
-    }
-
-    async writeAt(bufferOffset: number, data: DataView, dataOffset = 0, size: number = data.byteLength): Promise<Buffer> {
-        return await this.writer(bufferOffset, data, dataOffset, size)
-    }
-
-    async readAt(bufferOffset: number, data: DataView, dataOffset = 0, size: number = data.byteLength): Promise<DataView> {
-        return await this.reader(bufferOffset, data, dataOffset, size)
-    }
-
-    copyAt(thisOffset: number, that: Buffer, thatOffset: number, size: number) {
-        const thisValidOffset = lowerMultipleOf(4, thisOffset)
-        const thatValidOffset = lowerMultipleOf(4, thatOffset)
-        const thisOffsetCorrection = thisOffset - thisValidOffset
-        const thatOffsetCorrection = thatOffset - thatValidOffset
-        if (thatOffsetCorrection !== thisOffsetCorrection) {
-            throw new Error("Copying between unaligned buffers is not possible!")
-        }
-        const validSize = upperMultipleOf(4, size + thisOffsetCorrection)
-        this.device.enqueueCommand(`copy-${that._buffer.label}-to-${this._buffer.label}`, (encoder: CommandEncoder) => {
-            encoder.encoder.copyBufferToBuffer(that.buffer, thatValidOffset, this.buffer, thisValidOffset, validSize)
-        })
-    }
-    
-    private newBlankBuffer(label: string, size: number): [GPUBuffer, GPUBufferDescriptor, number] {
-        const descriptor = {
-            usage: this.usage,
-            size: upperMultipleOf(4, size),
-            label: label
-        }
-        return [this.device.wrapped.createBuffer(descriptor), descriptor, size]
-    }
-
-    private newBuffer(label: string, data: DataView): [GPUBuffer, GPUBufferDescriptor, number] {
-        const validSize = upperMultipleOf(4, data.byteLength)
-        const descriptor = {
-            usage: this.usage,
-            size: validSize,
-            mappedAtCreation: true,
-            label: label
-        }
-        const buffer = this.device.wrapped.createBuffer(descriptor)
-        const range = buffer.getMappedRange(0, validSize)
-        const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-        const dst = new Uint8Array(range, 0, data.byteLength)
-        dst.set(src)
-        buffer.unmap()
-        return [buffer, descriptor, data.byteLength]
-    }
-
-    private async writeToMapWriteBuffer(bufferOffset: number, data: DataView, dataOffset: number, size: number) {
-        const dataOffsetInBytes = data.byteOffset + dataOffset
-        const validBufferOffset = lowerMultipleOf(8, bufferOffset)
-        const offsetCorrection = bufferOffset - validBufferOffset
-        const validSize = upperMultipleOf(4, size + offsetCorrection)
-        return await this._buffer.mapAsync(GPUMapMode.WRITE, validBufferOffset, validSize).then(() => {
-            const range = this._buffer.getMappedRange(validBufferOffset, validSize)
-            const src = new Uint8Array(data.buffer, dataOffsetInBytes, size)
-            const dst = new Uint8Array(range, offsetCorrection, size)
-            dst.set(src)
-            this._buffer.unmap()
-            return this
-        })
-    }
-
-    private async readFromMapReadBuffer(bufferOffset: number, data: DataView, dataOffset: number, size: number): Promise<DataView> {
-        const dataOffsetInBytes = data.byteOffset + dataOffset
-        const validBufferOffset = lowerMultipleOf(8, bufferOffset)
-        const offsetCorrection = bufferOffset - validBufferOffset
-        const validSize = upperMultipleOf(4, size + offsetCorrection)
-        return await this.buffer.mapAsync(GPUMapMode.READ, validBufferOffset, validSize).then(() => {
-            const range = this._buffer.getMappedRange(validBufferOffset, validSize)
-            const src = new Uint8Array(range, offsetCorrection, size)
-            const dst = new Uint8Array(data.buffer, dataOffsetInBytes, size)
-            dst.set(src)
-            this._buffer.unmap()
-            return data
-        })
-    }
-    
-    private writeToCopyDstBuffer(bufferOffset: number, data: DataView, dataOffset: number, size: number): Promise<Buffer> {
-        const dataOffsetInBytes = data.byteOffset + dataOffset
-        const validBufferOffset = lowerMultipleOf(4, bufferOffset)
-        const offsetCorrection = bufferOffset - validBufferOffset
-        const validDataOffset = dataOffsetInBytes - offsetCorrection
-        const validSize = upperMultipleOf(4, size + offsetCorrection)
-        this.device.wrapped.queue.writeBuffer(this._buffer, validBufferOffset, data.buffer, validDataOffset, validSize)
-        return Promise.resolve(this)
-    }
-
-    private async readFromCopySrcBuffer(bufferOffset: number, data: DataView, dataOffset: number, size: number): Promise<DataView> {
-        const temp = this.device.buffer(`${this._descriptor.label}-temp`, GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ, size)
-        try {
-            temp.copyAt(0, this, bufferOffset, size)
-            return await temp.readFromMapReadBuffer(0, data, dataOffset, size)
-        } finally {
-            temp.destroy()
-        }
-    }
-
-}
+export type SyncBuffers<D extends DataBufferDescriptors> = ReplaceValues<D, SyncBuffer>;
 
 export class SyncBuffer implements Resource {
 
     private dirtyRange: [number, number]
 
-    private constructor(readonly gpuBuffer: Buffer, readonly cpuBuffer: DataView) {
+    private constructor(readonly gpuBuffer: DataBuffer, readonly cpuBuffer: DataView) {
         this.dirtyRange = [cpuBuffer.byteLength, 0]
     }
 
@@ -205,21 +39,323 @@ export class SyncBuffer implements Resource {
     }
 
     private clean() {
-        this.gpuBuffer.writeAt(this.dirtyRange[0], this.cpuBuffer, this.dirtyRange[0], this.dirtyRange[1] - this.dirtyRange[0])
+        const offset = this.dirtyRange[0];
+        const size = this.dirtyRange[1] - this.dirtyRange[0];
+        this.gpuBuffer.set({ offset, size }).fromData(this.cpuBuffer, offset);
         this.dirtyRange[0] = this.cpuBuffer.byteLength
         this.dirtyRange[1] = 0
     }
 
-    static create(label: string, device: Device, usage: GPUBufferUsageFlags, dataOrSize: DataView | number, stride: number = size(dataOrSize)) {
-        const gpuBuffer = new Buffer(label, device, usage, dataOrSize, stride)
-        const cpuBuffer = typeof dataOrSize === 'number' ? new DataView(new ArrayBuffer(dataOrSize)) : dataOrSize
-        return new SyncBuffer(gpuBuffer, cpuBuffer)
+    static create(label: string, device: Device, descriptor: DataBufferDescriptor) {
+        const gpuBuffer = new DataBuffer(label, device, descriptor);
+        const cpuBuffer = descriptor.data === undefined ? new DataView(new ArrayBuffer(gpuBuffer.size)) : descriptor.data;
+        return new SyncBuffer(gpuBuffer, cpuBuffer);
     }
 
 }
 
-function size(dataOrSize: number | DataView): number {
-    return typeof dataOrSize === 'number' ? dataOrSize : dataOrSize.byteLength
+export interface BaseBuffer extends Resource {
+    wrapped: GPUBuffer;
+    size: number;
+    label: string;
+    device: Device;
+    destroy(): void;
+    asBindingResource(binding?: Omit<GPUBufferBinding, "buffer"> | null): GPUBindingResource;
+}
+
+export abstract class AbstractBuffer implements BaseBuffer {
+
+    protected constructor(private _device: Device, private _wrapped: GPUBuffer) {
+    }
+
+    get wrapped() {
+        return this._wrapped;
+    }
+
+    set wrapped(b) {
+        this._wrapped.destroy();
+        this._wrapped = b;
+    }
+
+    get size() {
+        return this._wrapped.size;
+    }
+
+    get label() {
+        return this._wrapped.label;
+    }
+
+    get device() {
+        return this._device;
+    }
+
+    destroy() {
+        this._wrapped.destroy();
+    }
+
+    asBindingResource(binding: Omit<GPUBufferBinding, "buffer"> | null = null) {
+        return binding === null ? this._wrapped : {
+            ...binding,
+            buffer: this._wrapped,
+        };
+    }
+
+}
+
+export interface SourceBuffer extends BaseBuffer {
+    copy(segment?: DataSegment): DestinationClause<void>;
+    set(segment?: DataSegment): BufferWriter;
+}
+
+export interface DestinationBuffer extends BaseBuffer {
+    copy(segment?: DataSegment): SourceClause<void>;
+    get(segment?: DataSegment): BufferReader;
+}
+
+export class DataBuffer extends AbstractBuffer implements SourceBuffer, DestinationBuffer {
+
+    constructor(label: string, device: Device, readonly descriptor: DataBufferDescriptor) {
+        super(device, descriptor.size !== undefined ?
+            newBlankBuffer(device, label, usageFlags(descriptor), descriptor.size) :
+            newInitializedBuffer(device, label, usageFlags(descriptor), descriptor.data)
+        );
+        this.descriptor = descriptor;
+    }
+
+    copy(segment: DataSegment = {}): DestinationClause<void> & SourceClause<void> {
+        return {
+            ...copy(segment.size).from(this, segment.offset),
+            ...copy(segment.size).to(this, segment.offset),
+        };
+    }
+
+    async setData(data: DataView) {
+        if (data.byteLength > this.size) {
+            this.wrapped = newInitializedBuffer(this.device, this.label, usageFlags(this.descriptor), data);
+        } else {
+            this.set({ offset: 0, size: data.byteLength }).fromData(data);
+        }
+    }
+
+    set(bufferSegment: DataSegment = {}): BufferWriter {
+        return {
+            fromData: async (data, dataOffset = 0) => {
+                const bufferOffset = bufferSegment.offset ?? 0
+                const size = bufferSegment.size ?? Math.min(this.size - bufferOffset, data.byteLength - dataOffset)
+                const absoluteDataOffset = data.byteOffset + dataOffset
+                const validBufferOffset = lowerMultipleOf(4, bufferOffset)
+                const offsetCorrection = bufferOffset - validBufferOffset
+                const validDataOffset = absoluteDataOffset - offsetCorrection
+                const validSize = upperMultipleOf(4, size + offsetCorrection)
+                this.device.wrapped.queue.writeBuffer(this.wrapped, validBufferOffset, data.buffer, validDataOffset, validSize)
+            }
+        };
+    }
+
+    get(bufferSegment: DataSegment = {}): BufferReader {
+        return {
+            asData: (data, dataOffset = 0) => {
+                const dataSize = data?.byteLength ?? this.size
+                const bufferOffset = bufferSegment.offset ?? 0
+                const size = bufferSegment.size ?? Math.min(this.size - bufferOffset, dataSize - dataOffset)
+                const temp = this.device.readBuffer(`${this.label}-temp`, size);
+                try {
+                    this.copy(bufferSegment).to(temp);
+                    return temp.get().asData(data, dataOffset);
+                } finally {
+                    temp.destroy();
+                }
+            }
+        }
+    }
+
+}
+
+export type BufferUsage = StrictExclude<(keyof GPUBufferUsage), "MAP_READ" | "MAP_WRITE" | "COPY_SRC" | "COPY_DST">[]
+export type DataBuffers<D extends DataBufferDescriptors> = ReplaceValues<D, DataBuffer>;
+export type DataBufferDescriptors = Record<string, DataBufferDescriptor>;
+export type DataBufferDescriptor = {
+    usage: BufferUsage;
+} & ({
+    data: DataView;
+    size?: never;
+} | {
+    size: number;
+    data?: never;
+});
+
+export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
+
+    private mapper;
+
+    constructor(label: string, device: Device, size: number) {
+        super(device, newBlankBuffer(device, label, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, size));
+        this.mapper = new BufferMapper(this.wrapped, GPUMapMode.READ);
+    }
+
+    copy(bufferSegment: DataSegment = {}): SourceClause<void> {
+        return copy(bufferSegment.size).to(this, bufferSegment.offset);
+    }
+
+    get(bufferSegment: DataSegment = {}): BufferReader {
+        return {
+            asData: async (data?: DataView, dataOffset = 0) => {
+                const bufferOffset = bufferSegment.offset ?? 0
+                const dataView = data ?? new DataView(new ArrayBuffer(bufferSegment.size ?? this.size - bufferOffset))
+                const size = bufferSegment.size ?? Math.min(this.size - bufferOffset, dataView.byteLength - dataOffset)
+                const src = await this.mapper.mapAsync(bufferOffset, size);
+                const dst = new Uint8Array(dataView.buffer, dataView.byteOffset + dataOffset, size);
+                dst.set(src);
+                return dataView;
+            },
+        };
+    }
+
+}
+
+export type ReadBuffers<D extends ReadBufferDescriptors> = ReplaceValues<D, ReadBuffer>;
+export type ReadBufferDescriptors = Record<string, number>;
+
+export class WriteBuffer extends AbstractBuffer implements SourceBuffer {
+    
+    private mapper: BufferMapper;
+    
+    constructor(label: string, device: Device, readonly data: DataView) {
+        super(device, newInitializedBuffer(device, label, GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC, data));
+        this.data = data;
+        this.mapper = new BufferMapper(this.wrapped, GPUMapMode.WRITE);
+    }
+
+    copy(bufferSegment: DataSegment = {}): DestinationClause<void> {
+        return copy(bufferSegment.size).from(this, bufferSegment.offset);
+    }
+
+    set(bufferSegment: DataSegment = {}): BufferWriter {
+        return {
+            fromData: async (data, dataOffset = 0) => {
+                const bufferOffset = bufferSegment.offset ?? 0
+                const size = bufferSegment.size ?? Math.min(this.size - bufferOffset, data.byteLength - dataOffset)
+                const dst = await this.mapper.mapAsync(bufferOffset, size);
+                const src = new Uint8Array(data.buffer, data.byteOffset + dataOffset, size);
+                dst.set(src);
+            }
+        };
+    }
+
+}
+
+export type WriteBuffers<D extends WriteBufferDescriptors> = ReplaceValues<D, WriteBuffer>;
+export type WriteBufferDescriptors = Record<string, DataView>;
+
+export function copy(segmentSize?: number): SourceClause<DestinationClause<void>> & DestinationClause<SourceClause<void>> {
+    return {
+        from: (srcBuffer, srcOffset = 0) => ({
+            to: (dstBuffer, dstOffset = 0) => {
+                const size = segmentSize ?? Math.min(srcBuffer.size - srcOffset, dstBuffer.size - dstOffset)
+                const srcValidOffset = lowerMultipleOf(4, srcOffset)
+                const dstValidOffset = lowerMultipleOf(4, dstOffset)
+                const srcOffsetCorrection = srcOffset - srcValidOffset
+                const dstOffsetCorrection = dstOffset - dstValidOffset
+                if (srcOffsetCorrection !== dstOffsetCorrection) {
+                    throw new Error("Copying between unaligned buffers is not possible!")
+                }
+                const validSize = upperMultipleOf(4, size + srcOffsetCorrection)
+                srcBuffer.device.enqueueCommand(`copy-${srcBuffer.label}-to-${dstBuffer.label}`, encoder => {
+                    encoder.encoder.copyBufferToBuffer(srcBuffer.wrapped, srcValidOffset, dstBuffer.wrapped, dstValidOffset, validSize)
+                });
+            }
+        }),
+        to: (dstBuffer, dstOffset = 0) => ({
+            from: (srcBuffer, srcOffset = 0) => {
+                copy(segmentSize).from(srcBuffer, srcOffset).to(dstBuffer, dstOffset)
+            }
+        })
+    };
+}
+
+export type DestinationClause<T> = {
+    to: (buffer: DestinationBuffer, offset?: number) => T;
+};
+
+export type SourceClause<T> = {
+    from: (buffer: SourceBuffer, offset?: number) => T;
+};
+
+export type BufferReader = {
+    asData: (data?: DataView, offset?: number) => Promise<DataView>;
+};
+
+export type BufferWriter = {
+    fromData: (data: DataView, offset?: number) => Promise<void>;
+};
+
+
+class BufferMapper {
+
+    private range: [number, number] = [this.buffer.size, 0]
+    private promise = Promise.resolve();
+
+    constructor(private buffer: GPUBuffer, private mode: GPUMapModeFlags) {
+    }
+
+    private request(offset: number, size: number, resolve: () => void, reject: (e: any) => void) {
+        const mappingScheduled = this.range[1] > this.range[0];
+        this.range = [Math.min(this.range[0], offset), Math.max(this.range[1], offset + size)];
+        return (mappingScheduled ? this.promise : this.scheduleMapping()).then(resolve, e => {
+            reject(e)
+            return Promise.reject(e)
+        });
+    }
+
+    private scheduleMapping() {
+        const callback = () => new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+                this.buffer.mapAsync(this.mode, this.range[0], this.range[1] - this.range[0]).then(resolve, reject);
+                this.range = [this.buffer.size, 0];
+                this.promise = this.promise.finally(() => this.buffer.unmap());
+            });
+        });
+        return this.promise = this.promise.then(callback, callback);
+    }
+
+    async mapAsync(offset: number, size: number) {
+        const validOffset = lowerMultipleOf(8, offset);
+        const offsetCorrection = offset - validOffset;
+        const validSize = upperMultipleOf(4, size + offsetCorrection);
+        return new Promise<Uint8Array>((resolve, reject) => this.request(validOffset, validSize, () => {
+            const range = this.buffer.getMappedRange(validOffset, validSize)
+            resolve(new Uint8Array(range.slice(), offsetCorrection, size))
+        }, reject));
+    }
+}
+
+function newBlankBuffer(device: Device, label: string, usage: GPUBufferUsageFlags, size: number) {
+    return device.wrapped.createBuffer({
+        size: upperMultipleOf(4, size),
+        usage,
+        label
+    });
+}
+
+function newInitializedBuffer(device: Device, label: string, usage: GPUBufferUsageFlags, data: DataView) {
+    const buffer = device.wrapped.createBuffer({
+        mappedAtCreation: true,
+        size: upperMultipleOf(4, data.byteLength),
+        usage,
+        label
+    });
+    const range = buffer.getMappedRange(0, buffer.size);
+    const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    const dst = new Uint8Array(range, 0, data.byteLength);
+    dst.set(src);
+    buffer.unmap();
+    return buffer;
+}
+
+function usageFlags(descriptor: DataBufferDescriptor) {
+    return GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST | descriptor.usage
+        .map(u => GPUBufferUsage[u])
+        .reduce((u1, u2) => u1 | u2, 0);
 }
 
 function upperMultipleOf(n: number, value: number): number {

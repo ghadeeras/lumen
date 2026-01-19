@@ -1,4 +1,12 @@
-export interface Element<T> {
+export interface DataSegment {
+
+    offset?: number
+
+    size?: number
+    
+}
+
+export interface Element<T> extends DataSegment {
 
     alignment: number
 
@@ -15,6 +23,8 @@ export interface Element<T> {
     view(dataOrSize?: T[] | number): DataView
 
     range(index?: number, count?: number): [number, number]
+
+    segment(index?: number, count?: number): DataSegment
 
     read(view: DataView): T
 
@@ -76,6 +86,11 @@ abstract class BaseElement<T> implements Element<T> {
             this.writeMulti(result, 0, dataOrSize)
             return result
         }
+    }
+
+    segment(index = 0, count = 1): DataSegment {
+        const [l1, l2] = this.range(index, count)
+        return { offset: l1, size: l2 - l1 }
     }
 
     range(index = 0, count = 1): [number, number] {

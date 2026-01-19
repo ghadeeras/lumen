@@ -7,7 +7,10 @@ export type IfSet<T, K extends keyof T, R> = T[K] extends (object | any[] | stri
 export type Redefine<T, K extends keyof T, V> = {
     [k in keyof T]: k extends K ? V : T[k]
 }
-
+export type ReplaceValues<T extends Record<string, any>, V> = {
+    [k in keyof T]: V;
+};
+export type StrictExclude<T, S extends T> = Exclude<T, S>
 export type Supplier<T> = () => T
 
 export function failure<T>(message: string): T {
