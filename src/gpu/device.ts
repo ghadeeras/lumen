@@ -6,6 +6,7 @@ import * as buf from "./buffer.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
 import { Texture, Sampler } from "./texture.js"
+import { label, withLabel } from "./utils.js"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
@@ -66,18 +67,18 @@ export class Device {
         return () => listeners.splice(listeners.indexOf(safeListener), 1)
     }
 
-    async shaderModules<D extends shd.ShaderModuleDescriptors>(descriptors: D): Promise<shd.ShaderModules<D>> {
+    async shaderModules<D extends shd.ShaderModuleDescriptors>(descriptors: D, labelPrefix?: string): Promise<shd.ShaderModules<D>> {
         const result: Partial<shd.ShaderModules<D>> = {}
         for (const k in descriptors) {
-            result[k] = await this.shaderModule(k, descriptors[k])
+            result[k] = await this.shaderModule(withLabel(descriptors[k], labelPrefix, k))
         }
         return result as shd.ShaderModules<D>
     }
 
-    async shaderModule(label: string, descriptor: shd.ShaderModuleDescriptor): Promise<shd.ShaderModule> {
+    async shaderModule(descriptor: shd.ShaderModuleDescriptor): Promise<shd.ShaderModule> {
         return descriptor.path !== undefined
-            ? await this.remoteShaderModule(label, descriptor.path, descriptor.templateFunction)
-            : await this.inMemoryShaderModule(label, descriptor.code, descriptor.templateFunction);
+            ? await this.remoteShaderModule(descriptor.label ?? "shader", descriptor.path, descriptor.templateFunction)
+            : await this.inMemoryShaderModule(descriptor.label ?? "shader", descriptor.code, descriptor.templateFunction);
     }
 
     async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<shd.ShaderModule> {
@@ -101,24 +102,16 @@ export class Device {
         return shaderModule
     }
 
-    enqueueCommands(name: string, ...encodings: ((encoder: CommandEncoder) => void)[]) {
-        this.enqueue(...this.commands(name, ...encodings))
-    }
-    
-    enqueueCommand(name: string, encoding: (encoder: CommandEncoder) => void) {
-        this.enqueue(this.command(name, encoding))
+    enqueueCommands(label: string, encoding: (encoder: CommandEncoder) => void) {
+        this.enqueue(this.commandBuffer(label, encoding))
     }
 
-    enqueue(...commands: GPUCommandBuffer[]) {
-        this.wrapped.queue.submit(commands)
+    enqueue(...commandBuffers: GPUCommandBuffer[]) {
+        this.wrapped.queue.submit(commandBuffers)
     }
     
-    commands(name: string, ...encodings: ((encoder: CommandEncoder) => void)[]): GPUCommandBuffer[] {
-        return encodings.map((encoding, i) => this.command(`${name}#${i}`, encoding))
-    }
-    
-    command(name: string, encoding: (encoder: CommandEncoder) => void): GPUCommandBuffer {
-        const encoder = new CommandEncoder(name, this)
+    commandBuffer(label: string, encoding: (encoder: CommandEncoder) => void): GPUCommandBuffer {
+        const encoder = new CommandEncoder(label, this)
         encoding(encoder)
         return encoder.finish()
     }
@@ -135,76 +128,76 @@ export class Device {
         return new Sampler(this, descriptor)
     }
 
-    dataBuffers<D extends buf.DataBufferDescriptors>(descriptors: D): buf.DataBuffers<D> {
+    dataBuffers<D extends buf.DataBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.DataBuffers<D> {
         const result: Partial<buf.DataBuffers<D>> = {};
         for (const k in descriptors) {
-            result[k] = this.dataBuffer(k, descriptors[k]);
+            result[k] = this.dataBuffer(withLabel(descriptors[k], labelPrefix, k));
         }
         return result as buf.DataBuffers<D>;
     }
 
-    dataBuffer(label: string, descriptor: buf.DataBufferDescriptor): buf.DataBuffer {
-        return new buf.DataBuffer(label, this, descriptor);
+    dataBuffer(descriptor: buf.DataBufferDescriptor): buf.DataBuffer {
+        return new buf.DataBuffer(this, descriptor);
     }
 
-    readBuffers<D extends buf.ReadBufferDescriptors>(descriptors: D): buf.ReadBuffers<D> {
+    readBuffers<D extends buf.ReadBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.ReadBuffers<D> {
         const result: Partial<buf.ReadBuffers<D>> = {};
         for (const k in descriptors) {
-            result[k] = this.readBuffer(k, descriptors[k]);
+            result[k] = this.readBuffer(descriptors[k], label(labelPrefix, k));
         }
         return result as buf.ReadBuffers<D>;
     }
 
-    readBuffer(label: string, size: number): buf.ReadBuffer {
-        return new buf.ReadBuffer(label, this, size);
+    readBuffer(size: number, label?: string): buf.ReadBuffer {
+        return new buf.ReadBuffer(this, size, label);
     }
 
-    writeBuffers<D extends buf.WriteBufferDescriptors>(descriptors: D): buf.WriteBuffers<D> {
+    writeBuffers<D extends buf.WriteBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.WriteBuffers<D> {
         const result: Partial<buf.WriteBuffers<D>> = {};
         for (const k in descriptors) {
-            result[k] = this.writeBuffer(k, descriptors[k]);
+            result[k] = this.writeBuffer(descriptors[k], label(labelPrefix, k));
         }
         return result as buf.WriteBuffers<D>;
     }
 
-    writeBuffer(label: string, data: DataView): buf.WriteBuffer {
-        return new buf.WriteBuffer(label, this, data);
+    writeBuffer(data: DataView, label?: string): buf.WriteBuffer {
+        return new buf.WriteBuffer(this, data, label);
     }
 
-    syncBuffers<D extends buf.DataBufferDescriptors>(descriptors: D): buf.SyncBuffers<D> {
+    syncBuffers<D extends buf.DataBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.SyncBuffers<D> {
         const result: Partial<buf.SyncBuffers<D>> = {};
         for (const k in descriptors) {
-            result[k] = this.syncBuffer(k, descriptors[k]);
+            result[k] = this.syncBuffer(withLabel(descriptors[k], labelPrefix, k));
         }
         return result as buf.SyncBuffers<D>;
     }
 
-    syncBuffer(label: string, descriptor: buf.DataBufferDescriptor): buf.SyncBuffer {
-        return buf.SyncBuffer.create(label, this, descriptor);
+    syncBuffer(descriptor: buf.DataBufferDescriptor): buf.SyncBuffer {
+        return buf.SyncBuffer.create(this, descriptor);
     }
 
-    groupLayouts<D extends grp.BindGroupLayoutDescriptors>(descriptors: D): grp.BindGroupLayouts<D> {
+    groupLayouts<D extends grp.BindGroupLayoutDescriptors>(descriptors: D, labelPrefix?: string): grp.BindGroupLayouts<D> {
         const result: Partial<grp.BindGroupLayouts<D>> = {}
         for (const k in descriptors) {
-            result[k] = this.groupLayout(k, descriptors[k])
+            result[k] = this.groupLayout(withLabel(descriptors[k], labelPrefix, k))
         }
         return result as grp.BindGroupLayouts<D>
     }
 
-    groupLayout<D extends grp.BindGroupLayoutDescriptor>(label: string, descriptor: D): grp.BindGroupLayout<D> {
-        return new grp.BindGroupLayout(this, label, descriptor)
+    groupLayout<D extends grp.BindGroupLayoutDescriptor>(descriptor: D): grp.BindGroupLayout<D> {
+        return new grp.BindGroupLayout(this, descriptor)
     }
 
-    pipelineLayouts<D extends pln.PipelineLayoutDescriptors>(descriptors: D): pln.PipelineLayouts<D> {
+    pipelineLayouts<D extends pln.PipelineLayoutDescriptors>(descriptors: D, labelPrefix?: string): pln.PipelineLayouts<D> {
         const result: Partial<pln.PipelineLayouts<D>> = {}
         for (const k in descriptors) {
-            result[k] = this.pipelineLayout(k, descriptors[k])
+            result[k] = this.pipelineLayout(withLabel(descriptors[k], labelPrefix, k))
         }
         return result as pln.PipelineLayouts<D>
     }
 
-    pipelineLayout<D extends pln.PipelineLayoutDescriptor>(label: string, descriptor: D): pln.PipelineLayout<D> {
-        return new pln.PipelineLayout(this, label, descriptor)
+    pipelineLayout<D extends pln.PipelineLayoutDescriptor>(descriptor: D): pln.PipelineLayout<D> {
+        return new pln.PipelineLayout(this, descriptor)
     }
 
     suggestedGroupSizes() {
@@ -296,4 +289,3 @@ async function requestDevice(adapter: GPUAdapter, deviceDescriptor: GPUDeviceDes
     console.debug("GPU Device Limits:", device.limits)
     return device
 }
-

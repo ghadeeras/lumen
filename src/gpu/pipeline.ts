@@ -1,6 +1,7 @@
 import { Device } from "./device.js"
 import { BindGroup, BindGroupLayout, BindGroupLayoutDescriptor } from "./group.js"
 import { ShaderModule } from "./shader.js"
+import { label } from "./utils.js"
 
 export type PipelineEntries<D extends PipelineLayoutDescriptor> = {
     [k in keyof D["bindGroupLayouts"]]: D["bindGroupLayouts"][k]["layout"] extends BindGroupLayout<infer L> ? BindGroup<L> : never
@@ -11,6 +12,7 @@ export type PipelineLayouts<D extends PipelineLayoutDescriptors> = {
 }
 export type PipelineLayoutDescriptors = Record<string, PipelineLayoutDescriptor>
 export type PipelineLayoutDescriptor = {
+    label?: string
     bindGroupLayouts: Record<string, PipelineLayoutEntry<BindGroupLayoutDescriptor>>
 }
 export type PipelineLayoutEntry<L extends BindGroupLayoutDescriptor> = {
@@ -21,7 +23,7 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor> {
 
     readonly wrapped: GPUPipelineLayout
     
-    constructor(readonly device: Device, readonly label: string, readonly descriptor: D) {
+    constructor(readonly device: Device, readonly descriptor: D) {
         const entries = descriptor.bindGroupLayouts
         const groups = Object.values(entries).map(g => g.group)
         const count = groups.length > 0 ? 1 + Math.max(...groups) : 0
@@ -31,7 +33,7 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor> {
             bindGroupLayouts[entry.group] = entry.layout.wrapped
         }
         this.wrapped = device.wrapped.createPipelineLayout({
-            label,
+            label: descriptor.label,
             bindGroupLayouts
         })
     }
@@ -58,7 +60,7 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
 
     constructor(readonly layout: PipelineLayout<D>, readonly module: ShaderModule, readonly entryPoint: string) {
         this.descriptor = {
-            label: `${layout.label}/${module.descriptor.label}/${entryPoint}`,
+            label: label(layout.descriptor.label, module.descriptor.label, entryPoint),
             layout: layout.wrapped, 
             compute: {
                 entryPoint,

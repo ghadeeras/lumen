@@ -46,8 +46,8 @@ export class SyncBuffer implements Resource {
         this.dirtyRange[1] = 0
     }
 
-    static create(label: string, device: Device, descriptor: DataBufferDescriptor) {
-        const gpuBuffer = new DataBuffer(label, device, descriptor);
+    static create(device: Device, descriptor: DataBufferDescriptor) {
+        const gpuBuffer = new DataBuffer(device, descriptor);
         const cpuBuffer = descriptor.data === undefined ? new DataView(new ArrayBuffer(gpuBuffer.size)) : descriptor.data;
         return new SyncBuffer(gpuBuffer, cpuBuffer);
     }
@@ -114,10 +114,10 @@ export interface DestinationBuffer extends BaseBuffer {
 
 export class DataBuffer extends AbstractBuffer implements SourceBuffer, DestinationBuffer {
 
-    constructor(label: string, device: Device, readonly descriptor: DataBufferDescriptor) {
+    constructor(device: Device, readonly descriptor: DataBufferDescriptor) {
         super(device, descriptor.size !== undefined ?
-            newBlankBuffer(device, label, usageFlags(descriptor), descriptor.size) :
-            newInitializedBuffer(device, label, usageFlags(descriptor), descriptor.data)
+            newBlankBuffer(device, usageFlags(descriptor), descriptor.size, descriptor.label) :
+            newInitializedBuffer(device, usageFlags(descriptor), descriptor.data, descriptor.label)
         );
         this.descriptor = descriptor;
     }
@@ -131,7 +131,7 @@ export class DataBuffer extends AbstractBuffer implements SourceBuffer, Destinat
 
     async setData(data: DataView) {
         if (data.byteLength > this.size) {
-            this.wrapped = newInitializedBuffer(this.device, this.label, usageFlags(this.descriptor), data);
+            this.wrapped = newInitializedBuffer(this.device, usageFlags(this.descriptor), data, this.label);
         } else {
             this.set({ offset: 0, size: data.byteLength }).fromData(data);
         }
@@ -158,7 +158,7 @@ export class DataBuffer extends AbstractBuffer implements SourceBuffer, Destinat
                 const dataSize = data?.byteLength ?? this.size
                 const bufferOffset = bufferSegment.offset ?? 0
                 const size = bufferSegment.size ?? Math.min(this.size - bufferOffset, dataSize - dataOffset)
-                const temp = this.device.readBuffer(`${this.label}-temp`, size);
+                const temp = this.device.readBuffer(size, `${this.label}-temp`);
                 try {
                     this.copy(bufferSegment).to(temp);
                     return temp.get().asData(data, dataOffset);
@@ -175,6 +175,7 @@ export type BufferUsage = StrictExclude<(keyof GPUBufferUsage), "MAP_READ" | "MA
 export type DataBuffers<D extends DataBufferDescriptors> = ReplaceValues<D, DataBuffer>;
 export type DataBufferDescriptors = Record<string, DataBufferDescriptor>;
 export type DataBufferDescriptor = {
+    label?: string
     usage: BufferUsage;
 } & ({
     data: DataView;
@@ -188,8 +189,8 @@ export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
 
     private mapper;
 
-    constructor(label: string, device: Device, size: number) {
-        super(device, newBlankBuffer(device, label, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, size));
+    constructor(device: Device, size: number, label?: string) {
+        super(device, newBlankBuffer(device, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, size, label));
         this.mapper = new BufferMapper(this.wrapped, GPUMapMode.READ);
     }
 
@@ -220,8 +221,8 @@ export class WriteBuffer extends AbstractBuffer implements SourceBuffer {
     
     private mapper: BufferMapper;
     
-    constructor(label: string, device: Device, readonly data: DataView) {
-        super(device, newInitializedBuffer(device, label, GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC, data));
+    constructor(device: Device, readonly data: DataView, label?: string) {
+        super(device, newInitializedBuffer(device, GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC, data, label));
         this.data = data;
         this.mapper = new BufferMapper(this.wrapped, GPUMapMode.WRITE);
     }
@@ -260,7 +261,7 @@ export function copy(segmentSize?: number): SourceClause<DestinationClause<void>
                     throw new Error("Copying between unaligned buffers is not possible!")
                 }
                 const validSize = upperMultipleOf(4, size + srcOffsetCorrection)
-                srcBuffer.device.enqueueCommand(`copy-${srcBuffer.label}-to-${dstBuffer.label}`, encoder => {
+                srcBuffer.device.enqueueCommands(`copy-${srcBuffer.label}-to-${dstBuffer.label}`, encoder => {
                     encoder.encoder.copyBufferToBuffer(srcBuffer.wrapped, srcValidOffset, dstBuffer.wrapped, dstValidOffset, validSize)
                 });
             }
@@ -329,7 +330,7 @@ class BufferMapper {
     }
 }
 
-function newBlankBuffer(device: Device, label: string, usage: GPUBufferUsageFlags, size: number) {
+function newBlankBuffer(device: Device, usage: GPUBufferUsageFlags, size: number, label?: string) {
     return device.wrapped.createBuffer({
         size: upperMultipleOf(4, size),
         usage,
@@ -337,7 +338,7 @@ function newBlankBuffer(device: Device, label: string, usage: GPUBufferUsageFlag
     });
 }
 
-function newInitializedBuffer(device: Device, label: string, usage: GPUBufferUsageFlags, data: DataView) {
+function newInitializedBuffer(device: Device, usage: GPUBufferUsageFlags, data: DataView, label?: string) {
     const buffer = device.wrapped.createBuffer({
         mappedAtCreation: true,
         size: upperMultipleOf(4, data.byteLength),

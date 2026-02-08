@@ -63,3 +63,22 @@ export function int8Array(view: DataView): Int8Array {
 export function uint8Array(view: DataView): Uint8Array {
     return new Uint8Array(view.buffer, view.byteOffset, view.byteLength / Uint8Array.BYTES_PER_ELEMENT)
 }
+
+export function withLabel<D extends GPUObjectDescriptorBase>(descriptor: D, ...labelParts: (string | undefined)[]) {
+    return {
+        label: label(...labelParts),
+        ...descriptor
+    }
+}
+
+export function label(...parts: (string | undefined)[]) {
+    return parts.reduce((a, p) => a !== undefined 
+        ? p !== undefined 
+            ? `${a}.${p}` 
+            : a 
+        : p !== undefined 
+            ? p 
+            : undefined, 
+        undefined
+    )
+}

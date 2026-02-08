@@ -3,6 +3,7 @@ import { DataBuffer, SyncBuffer } from "./buffer.js";
 import { Device } from "./device.js";
 import { PipelineLayoutEntry } from "./pipeline.js";
 import { Sampler, Texture, TextureView } from "./texture.js";
+import { withLabel } from "./utils.js";
 
 /*
  * Bind Group types
@@ -12,6 +13,7 @@ export type BindGroups<L extends BindGroupLayoutDescriptor, D extends BindGroupD
 } 
 export type BindGroupDescriptors<D extends BindGroupLayoutDescriptor> = Record<string, BindGroupDescriptor<D>>;
 export type BindGroupDescriptor<D extends BindGroupLayoutDescriptor> = {
+    label?: string
     entries: BindGroupEntries<D>
 }
 export type BindGroupEntries<D extends BindGroupLayoutDescriptor> = {
@@ -32,6 +34,7 @@ export type BindGroupLayouts<D extends BindGroupLayoutDescriptors> = {
 }
 export type BindGroupLayoutDescriptors = Record<string, BindGroupLayoutDescriptor>;
 export type BindGroupLayoutDescriptor = {
+    label?: string
     entries: Record<string, BindGroupLayoutEntry>
 }
 export type BindGroupLayoutEntry = 
@@ -44,6 +47,10 @@ export type BindGroupResourceLayout<T extends ResourceType> = Only<
     Required<Redefine<GPUBindGroupLayoutEntry, "visibility", (keyof typeof GPUShaderStage)[]>>, 
     T | BindingAttributes
 >
+export type BindGroupResourceLayoutWithoutAttributes<T extends ResourceType> = Only<
+    Required<Redefine<GPUBindGroupLayoutEntry, "visibility", (keyof typeof GPUShaderStage)[]>>, 
+    T
+>
 export type BindingAttributes = Exclude<keyof GPUBindGroupLayoutEntry, ResourceType>
 export type ResourceType = "buffer" | "texture" | "storageTexture" | "externalTexture" | "sampler"
 
@@ -51,7 +58,7 @@ export class BindGroupLayout<D extends BindGroupLayoutDescriptor> {
 
     readonly wrapped: GPUBindGroupLayout
 
-    constructor(readonly device: Device, readonly label: string, readonly descriptor: D) {
+    constructor(readonly device: Device, readonly descriptor: D) {
         const entryList: GPUBindGroupLayoutEntry[] = [];
         for (const key of Object.keys(descriptor.entries)) {
             const entry = descriptor.entries[key]
@@ -62,21 +69,21 @@ export class BindGroupLayout<D extends BindGroupLayoutDescriptor> {
             entryList.push(newEntry)
         }
         this.wrapped = device.wrapped.createBindGroupLayout({
-            label,
+            label: descriptor.label,
             entries: entryList
         })
     }
 
-    instance(label: string, descriptor: BindGroupDescriptor<D>): BindGroup<D> {
-        return new BindGroup(label, this, descriptor)
-    }
-
-    instances<G extends BindGroupDescriptors<D>>(descriptors: G): BindGroups<D, G> {
+    instances<G extends BindGroupDescriptors<D>>(descriptors: G, labelPrefix?: string): BindGroups<D, G> {
         const result: Partial<BindGroups<D, G>> = {}
         for (const key in descriptors) {
-            result[key] = this.instance(key, descriptors[key])
+            result[key] = this.instance(withLabel(descriptors[key], labelPrefix, this.descriptor.label, key))
         }
         return result as BindGroups<D, G>
+    }
+
+    instance(descriptor: BindGroupDescriptor<D>): BindGroup<D> {
+        return new BindGroup(this, descriptor)
     }
 
     asEntry(group: number): PipelineLayoutEntry<D> {
@@ -89,7 +96,7 @@ export class BindGroup<D extends BindGroupLayoutDescriptor> {
 
     readonly wrapped: GPUBindGroup
 
-    constructor(readonly label: string, readonly layout: BindGroupLayout<D>, readonly descriptor: BindGroupDescriptor<D>) {
+    constructor(readonly layout: BindGroupLayout<D>, readonly descriptor: BindGroupDescriptor<D>) {
         const entryList: GPUBindGroupEntry[] = [];
         for (const key of Object.keys(descriptor.entries)) {
             entryList.push({
@@ -98,7 +105,7 @@ export class BindGroup<D extends BindGroupLayoutDescriptor> {
             })
         }
         this.wrapped = layout.device.wrapped.createBindGroup({
-            label: `${layout.label}@${label}`,
+            label: descriptor.label,
             layout: layout.wrapped,
             entries: entryList
         })
