@@ -1,44 +1,37 @@
 import { Device } from "./device.js"
-import { BindGroup, BindGroupLayout, BindGroupLayoutDescriptor } from "./group.js"
 import { ShaderModule } from "./shader.js"
 import { label } from "./utils.js"
+import * as grp from "./group.js"
 
 export type PipelineEntries<D extends PipelineLayoutDescriptor> = {
-    [k in keyof D["bindGroupLayouts"]]: D["bindGroupLayouts"][k]["layout"] extends BindGroupLayout<infer L> ? BindGroup<L> : never
+    [k in keyof D]: D[k]["layout"] extends grp.BindGroupLayout<infer L> ? grp.BindGroup<L> : never
 }
 
 export type PipelineLayouts<D extends PipelineLayoutDescriptors> = {
     [k in keyof D]: PipelineLayout<D[k]>
 }
 export type PipelineLayoutDescriptors = Record<string, PipelineLayoutDescriptor>
-export type PipelineLayoutDescriptor = {
-    label?: string
-    bindGroupLayouts: Record<string, PipelineLayoutEntry<BindGroupLayoutDescriptor>>
-}
-export type PipelineLayoutEntry<L extends BindGroupLayoutDescriptor> = {
+export type PipelineLayoutDescriptor = Record<string, PipelineLayoutEntry<grp.BindGroupLayoutDescriptor>>
+export type PipelineLayoutEntry<L extends grp.BindGroupLayoutDescriptor> = {
     group: number,
-    layout: BindGroupLayout<L>
+    layout: grp.BindGroupLayout<L>
 }
 export class PipelineLayout<D extends PipelineLayoutDescriptor> {
 
     readonly wrapped: GPUPipelineLayout
     
-    constructor(readonly device: Device, readonly descriptor: D) {
-        const entries = descriptor.bindGroupLayouts
-        const groups = Object.values(entries).map(g => g.group)
+    private constructor(readonly device: Device, readonly label: string, readonly descriptor: D) {
+        const groups = Object.values(descriptor).map(g => g.group)
         const count = groups.length > 0 ? 1 + Math.max(...groups) : 0
         const bindGroupLayouts = new Array<GPUBindGroupLayout>(count)
-        for (const k of Object.keys(entries)) {
-            const entry = entries[k]
+        for (const k of Object.keys(descriptor)) {
+            const entry = descriptor[k]
             bindGroupLayouts[entry.group] = entry.layout.wrapped
         }
-        this.wrapped = device.wrapped.createPipelineLayout({
-            label: descriptor.label,
-            bindGroupLayouts
-        })
+        this.wrapped = device.wrapped.createPipelineLayout({ label, bindGroupLayouts })
     }
 
-    computeInstance(module: ShaderModule, entryPoint: string): ComputePipeline<D> {
+    computePipeline(module: ShaderModule, entryPoint: string): ComputePipeline<D> {
         return new ComputePipeline(this, module, entryPoint)
     }
 
@@ -46,9 +39,29 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor> {
         for (const k of Object.keys(groups)) {
             const group = groups[k]
             if (group) {
-                pass.setBindGroup(this.descriptor.bindGroupLayouts[k].group, group.wrapped)
+                pass.setBindGroup(this.descriptor[k].group, group.wrapped)
             }
         }
+    }
+
+    static instances<D extends PipelineLayoutDescriptors>(device: Device, descriptors: D, labelPrefix?: string): PipelineLayouts<D> {
+        const result: Partial<PipelineLayouts<D>> = {}
+        for (const key in descriptors) {
+            result[key] = PipelineLayout.instance(device, descriptors[key], label(labelPrefix, key))
+        }
+        return result as PipelineLayouts<D>
+    }
+
+    static instance<D extends PipelineLayoutDescriptor>(device: Device, descriptor: D, label?: string): PipelineLayout<D> {
+        return new PipelineLayout(device, label ?? PipelineLayout.labelFrom(descriptor), descriptor)
+    }
+    
+    static labelFrom<D extends PipelineLayoutDescriptor>(descriptor: D): string {
+        return `[ ${Object.keys(descriptor)
+            .sort((a, b) => descriptor[a].group - descriptor[b].group)
+            .map(key => `${key}: ${descriptor[key].layout.label}`)
+            .join(", ")
+        } ]`;
     }
 
 }
@@ -60,7 +73,7 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
 
     constructor(readonly layout: PipelineLayout<D>, readonly module: ShaderModule, readonly entryPoint: string) {
         this.descriptor = {
-            label: label(layout.descriptor.label, module.descriptor.label, entryPoint),
+            label: label(layout.label, module.descriptor.label, entryPoint),
             layout: layout.wrapped, 
             compute: {
                 entryPoint,
@@ -81,6 +94,6 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
 
 }
 
-export function group<D extends BindGroupLayoutDescriptor>(group: number, layout: BindGroupLayout<D>): PipelineLayoutEntry<D> {
+export function group<D extends grp.BindGroupLayoutDescriptor>(group: number, layout: grp.BindGroupLayout<D>): PipelineLayoutEntry<D> {
     return { group, layout }
 }

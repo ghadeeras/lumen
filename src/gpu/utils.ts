@@ -3,6 +3,8 @@ import { Texture } from "./texture.js";
 
 export interface Resource {
 
+    label: string
+
     asBindingResource(): GPUBindingResource
 
 }

@@ -170,8 +170,12 @@ export class TextureView implements Resource {
 
     readonly view: GPUTextureView
     
-    constructor(readonly texture: Texture, descriptor: GPUTextureViewDescriptor | undefined = undefined) {
+    constructor(readonly texture: Texture, readonly descriptor: GPUTextureViewDescriptor | undefined = undefined) {
         this.view = texture.wrapped.createView(descriptor)
+    }
+
+    get label() {
+        return this.descriptor?.label ?? this.texture.label;
     }
 
     colorAttachment(clearValue: GPUColor | undefined = undefined): GPURenderPassColorAttachment {
@@ -205,6 +209,10 @@ export class Sampler implements Resource {
 
     constructor(readonly device: Device, readonly descriptor: GPUSamplerDescriptor | undefined = undefined) {
         this.sampler = this.device.wrapped.createSampler(descriptor)
+    }
+
+    get label() {
+        return this.descriptor?.label ?? "sampler";
     }
    
     asBindingResource(): GPUBindingResource {

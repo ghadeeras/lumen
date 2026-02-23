@@ -3,10 +3,10 @@ import * as pln from "./pipeline.js"
 import * as shd from "./shader.js"
 import * as grp from "./group.js"
 import * as buf from "./buffer.js"
+import * as txr from "./texture.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
-import { Texture, Sampler } from "./texture.js"
-import { label, withLabel } from "./utils.js"
+import { withLabel } from "./utils.js"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
@@ -120,84 +120,60 @@ export class Device {
         return new Canvas(this, element, sampleCount)
     }
 
-    texture(descriptor: GPUTextureDescriptor): Texture {
-        return new Texture(this, descriptor)
+    texture(descriptor: GPUTextureDescriptor): txr.Texture {
+        return new txr.Texture(this, descriptor)
     }
 
     sampler(descriptor: GPUSamplerDescriptor | undefined = undefined) {
-        return new Sampler(this, descriptor)
+        return new txr.Sampler(this, descriptor)
     }
 
     dataBuffers<D extends buf.DataBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.DataBuffers<D> {
-        const result: Partial<buf.DataBuffers<D>> = {};
-        for (const k in descriptors) {
-            result[k] = this.dataBuffer(withLabel(descriptors[k], labelPrefix, k));
-        }
-        return result as buf.DataBuffers<D>;
+        return buf.DataBuffer.instances(this, descriptors, labelPrefix);
     }
 
     dataBuffer(descriptor: buf.DataBufferDescriptor): buf.DataBuffer {
-        return new buf.DataBuffer(this, descriptor);
+        return buf.DataBuffer.instance(this, descriptor);
     }
 
     readBuffers<D extends buf.ReadBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.ReadBuffers<D> {
-        const result: Partial<buf.ReadBuffers<D>> = {};
-        for (const k in descriptors) {
-            result[k] = this.readBuffer(descriptors[k], label(labelPrefix, k));
-        }
-        return result as buf.ReadBuffers<D>;
+        return buf.ReadBuffer.instances(this, descriptors, labelPrefix);
     }
 
     readBuffer(size: number, label?: string): buf.ReadBuffer {
-        return new buf.ReadBuffer(this, size, label);
+        return buf.ReadBuffer.instance(this, size, label);
     }
 
     writeBuffers<D extends buf.WriteBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.WriteBuffers<D> {
-        const result: Partial<buf.WriteBuffers<D>> = {};
-        for (const k in descriptors) {
-            result[k] = this.writeBuffer(descriptors[k], label(labelPrefix, k));
-        }
-        return result as buf.WriteBuffers<D>;
+        return buf.WriteBuffer.instances(this, descriptors, labelPrefix);
     }
 
     writeBuffer(data: DataView, label?: string): buf.WriteBuffer {
-        return new buf.WriteBuffer(this, data, label);
+        return buf.WriteBuffer.instance(this, data, label);
     }
 
     syncBuffers<D extends buf.DataBufferDescriptors>(descriptors: D, labelPrefix?: string): buf.SyncBuffers<D> {
-        const result: Partial<buf.SyncBuffers<D>> = {};
-        for (const k in descriptors) {
-            result[k] = this.syncBuffer(withLabel(descriptors[k], labelPrefix, k));
-        }
-        return result as buf.SyncBuffers<D>;
+        return buf.SyncBuffer.instances(this, descriptors, labelPrefix);
     }
 
     syncBuffer(descriptor: buf.DataBufferDescriptor): buf.SyncBuffer {
-        return buf.SyncBuffer.create(this, descriptor);
+        return buf.SyncBuffer.instance(this, descriptor);
     }
 
     groupLayouts<D extends grp.BindGroupLayoutDescriptors>(descriptors: D, labelPrefix?: string): grp.BindGroupLayouts<D> {
-        const result: Partial<grp.BindGroupLayouts<D>> = {}
-        for (const k in descriptors) {
-            result[k] = this.groupLayout(withLabel(descriptors[k], labelPrefix, k))
-        }
-        return result as grp.BindGroupLayouts<D>
+        return grp.BindGroupLayout.instances(this, descriptors, labelPrefix)
     }
 
-    groupLayout<D extends grp.BindGroupLayoutDescriptor>(descriptor: D): grp.BindGroupLayout<D> {
-        return new grp.BindGroupLayout(this, descriptor)
+    groupLayout<D extends grp.BindGroupLayoutDescriptor>(descriptor: D, label?: string): grp.BindGroupLayout<D> {
+        return grp.BindGroupLayout.instance(this, descriptor, label)
     }
 
     pipelineLayouts<D extends pln.PipelineLayoutDescriptors>(descriptors: D, labelPrefix?: string): pln.PipelineLayouts<D> {
-        const result: Partial<pln.PipelineLayouts<D>> = {}
-        for (const k in descriptors) {
-            result[k] = this.pipelineLayout(withLabel(descriptors[k], labelPrefix, k))
-        }
-        return result as pln.PipelineLayouts<D>
+        return pln.PipelineLayout.instances(this, descriptors, labelPrefix)
     }
 
-    pipelineLayout<D extends pln.PipelineLayoutDescriptor>(descriptor: D): pln.PipelineLayout<D> {
-        return new pln.PipelineLayout(this, descriptor)
+    pipelineLayout<D extends pln.PipelineLayoutDescriptor>(descriptor: D, label?: string): pln.PipelineLayout<D> {
+        return pln.PipelineLayout.instance(this, descriptor, label)
     }
 
     suggestedGroupSizes() {

@@ -1,7 +1,7 @@
 import { ReplaceValues, StrictExclude } from "../utils.js";
 import { Device } from "./device.js";
 import { DataSegment, Element } from "./types.js";
-import { Resource } from "./utils.js";
+import { label, Resource, withLabel } from "./utils.js";
 
 export type SyncBuffers<D extends DataBufferDescriptors> = ReplaceValues<D, SyncBuffer>;
 
@@ -11,6 +11,10 @@ export class SyncBuffer implements Resource {
 
     private constructor(readonly gpuBuffer: DataBuffer, readonly cpuBuffer: DataView) {
         this.dirtyRange = [cpuBuffer.byteLength, 0]
+    }
+
+    get label() {
+        return this.gpuBuffer.label;
     }
 
     asBindingResource(binding: Omit<GPUBufferBinding, "buffer"> = {}): GPUBindingResource {
@@ -46,8 +50,16 @@ export class SyncBuffer implements Resource {
         this.dirtyRange[1] = 0
     }
 
-    static create(device: Device, descriptor: DataBufferDescriptor) {
-        const gpuBuffer = new DataBuffer(device, descriptor);
+    static instances<D extends DataBufferDescriptors>(device: Device, descriptors: D, labelPrefix?: string): SyncBuffers<D> {
+        const result: Partial<SyncBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = SyncBuffer.instance(device, withLabel(descriptors[k], labelPrefix, k));
+        }
+        return result as SyncBuffers<D>;
+    }
+
+    static instance(device: Device, descriptor: DataBufferDescriptor) {
+        const gpuBuffer = device.dataBuffer(descriptor);
         const cpuBuffer = descriptor.data === undefined ? new DataView(new ArrayBuffer(gpuBuffer.size)) : descriptor.data;
         return new SyncBuffer(gpuBuffer, cpuBuffer);
     }
@@ -65,7 +77,7 @@ export interface BaseBuffer extends Resource {
 
 export abstract class AbstractBuffer implements BaseBuffer {
 
-    protected constructor(private _device: Device, private _wrapped: GPUBuffer) {
+    protected constructor(readonly device: Device, private _wrapped: GPUBuffer) {
     }
 
     get wrapped() {
@@ -83,10 +95,6 @@ export abstract class AbstractBuffer implements BaseBuffer {
 
     get label() {
         return this._wrapped.label;
-    }
-
-    get device() {
-        return this._device;
     }
 
     destroy() {
@@ -114,7 +122,7 @@ export interface DestinationBuffer extends BaseBuffer {
 
 export class DataBuffer extends AbstractBuffer implements SourceBuffer, DestinationBuffer {
 
-    constructor(device: Device, readonly descriptor: DataBufferDescriptor) {
+    private constructor(device: Device, readonly descriptor: DataBufferDescriptor) {
         super(device, descriptor.size !== undefined ?
             newBlankBuffer(device, usageFlags(descriptor), descriptor.size, descriptor.label) :
             newInitializedBuffer(device, usageFlags(descriptor), descriptor.data, descriptor.label)
@@ -169,6 +177,19 @@ export class DataBuffer extends AbstractBuffer implements SourceBuffer, Destinat
         }
     }
 
+    static instances<D extends DataBufferDescriptors>(device: Device, descriptors: D, labelPrefix?: string): DataBuffers<D> {
+        const result: Partial<DataBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = DataBuffer.instance(device, withLabel(descriptors[k], labelPrefix, k));
+        }
+        return result as DataBuffers<D>;
+    }
+
+
+    static instance<D extends DataBufferDescriptor>(device: Device, descriptor: D): DataBuffer {
+        return new DataBuffer(device, descriptor);
+    }
+
 }
 
 export type BufferUsage = StrictExclude<(keyof GPUBufferUsage), "MAP_READ" | "MAP_WRITE" | "COPY_SRC" | "COPY_DST">[]
@@ -189,7 +210,7 @@ export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
 
     private mapper;
 
-    constructor(device: Device, size: number, label?: string) {
+    private constructor(device: Device, size: number, label?: string) {
         super(device, newBlankBuffer(device, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, size, label));
         this.mapper = new BufferMapper(this.wrapped, GPUMapMode.READ);
     }
@@ -212,6 +233,18 @@ export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
         };
     }
 
+    static instances<D extends ReadBufferDescriptors>(device: Device, descriptors: D, labelPrefix?: string): ReadBuffers<D> {
+        const result: Partial<ReadBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = ReadBuffer.instance(device, descriptors[k], label(labelPrefix, k));
+        }
+        return result as ReadBuffers<D>;
+    }
+
+    static instance(device: Device, size: number, label?: string): ReadBuffer {
+        return new ReadBuffer(device, size, label);
+    }
+
 }
 
 export type ReadBuffers<D extends ReadBufferDescriptors> = ReplaceValues<D, ReadBuffer>;
@@ -221,7 +254,7 @@ export class WriteBuffer extends AbstractBuffer implements SourceBuffer {
     
     private mapper: BufferMapper;
     
-    constructor(device: Device, readonly data: DataView, label?: string) {
+    private constructor(device: Device, readonly data: DataView, label?: string) {
         super(device, newInitializedBuffer(device, GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC, data, label));
         this.data = data;
         this.mapper = new BufferMapper(this.wrapped, GPUMapMode.WRITE);
@@ -241,6 +274,18 @@ export class WriteBuffer extends AbstractBuffer implements SourceBuffer {
                 dst.set(src);
             }
         };
+    }
+
+    static instances<D extends WriteBufferDescriptors>(device: Device, descriptors: D, labelPrefix?: string): WriteBuffers<D> {
+        const result: Partial<WriteBuffers<D>> = {};
+        for (const k in descriptors) {
+            result[k] = WriteBuffer.instance(device, descriptors[k], label(labelPrefix, k));
+        }
+        return result as WriteBuffers<D>;
+    }
+
+    static instance(device: Device, data: DataView, label?: string): WriteBuffer {
+        return new WriteBuffer(device, data, label);
     }
 
 }
