@@ -1,5 +1,5 @@
+import * as pln from "./pipeline.js"
 import { Device } from "./device.js"
-import { ComputePipeline, PipelineEntries, PipelineLayoutDescriptor } from "./index.js"
 
 export class CommandEncoder {
 
@@ -75,11 +75,11 @@ export class ComputePass extends Pass<GPUComputePassEncoder> {
 
 }
 
-export class ComputePassBuilder<D extends PipelineLayoutDescriptor> {
+export class ComputePassBuilder<D extends pln.PipelineLayoutDescriptor> {
     
     constructor(
-        private pipeline: ComputePipeline<D>, 
-        private groups: Partial<PipelineEntries<D>>
+        private pipeline: pln.ComputePipeline<D>, 
+        private groups: Partial<pln.PipelineEntries<D>>
     ) {}
 
     dispatchWorkGroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): ComputePass {

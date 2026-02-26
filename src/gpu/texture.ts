@@ -1,12 +1,16 @@
+import * as utl from "./utils.js"
 import { Device } from "./device.js"
-import { formatOf, Resource } from "./utils.js"
 
-export class Texture implements Resource {
+export class Texture implements utl.Resource<Texture> {
 
     private _wrapped: GPUTexture
 
     constructor(readonly device: Device, readonly descriptor: GPUTextureDescriptor) {
         this._wrapped = this.device.wrapped.createTexture(descriptor)
+    }
+
+    baseResource(): Texture {
+        return this
     }
 
     asBindingResource(): GPUBindingResource {
@@ -50,7 +54,7 @@ export class Texture implements Resource {
     depthState(state: Partial<GPUDepthStencilState> = {}): GPUDepthStencilState {
         return {
             ...state,
-            format: state.format ?? formatOf(this.descriptor.format),
+            format: state.format ?? utl.formatOf(this.descriptor.format),
             depthCompare: state.depthCompare ?? "less",
             depthWriteEnabled: state.depthWriteEnabled ?? true
         }
@@ -166,7 +170,7 @@ export class Texture implements Resource {
     }
 }
 
-export class TextureView implements Resource {
+export class TextureView implements utl.Resource<Texture> {
 
     readonly wrapped: GPUTextureView
     
@@ -176,6 +180,10 @@ export class TextureView implements Resource {
 
     get label() {
         return this.descriptor?.label ?? this.texture.label;
+    }
+    
+    baseResource(): Texture {
+        return this.texture
     }
 
     colorAttachment(clearValue: GPUColor | undefined = undefined): GPURenderPassColorAttachment {
@@ -203,7 +211,7 @@ export class TextureView implements Resource {
     
 }
 
-export class Sampler implements Resource {
+export class Sampler implements utl.Resource<Sampler> {
 
     readonly wrapped: GPUSampler
 
@@ -217,6 +225,10 @@ export class Sampler implements Resource {
    
     asBindingResource(): GPUBindingResource {
         return this.wrapped
+    }
+
+    baseResource(): Sampler {
+        return this
     }
     
 }
