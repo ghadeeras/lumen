@@ -1,22 +1,9 @@
-import { Only } from "../utils.js";
+import * as utl from "./utils.js";
 import { Device } from "./device.js";
-import { asColorTargetState, TextureFormatSource, withLabel } from "./utils.js";
 
 export type ShaderModules<D extends ShaderModuleDescriptors> = {
     [k in keyof D]: ShaderModule
 }
-export type ShaderModuleDescriptors = Record<string, ShaderModuleDescriptor>
-export type ShaderModuleDescriptor = ShaderModuleCode & {
-    label?: string,
-    compilationHints?: Array<GPUShaderModuleCompilationHint>;
-    templateFunction?: (code: string) => string
-}
-export type ShaderModuleCode = Only<ShaderModuleCodeAttributes, "path"> | Only<ShaderModuleCodeAttributes, "code">
-type ShaderModuleCodeAttributes = {
-    path: string
-    code: string
-}
-
 export class ShaderModule {
 
     readonly wrapped: GPUShaderModule
@@ -79,12 +66,12 @@ export class ShaderModule {
         }
     }
 
-    fragmentState(entryPoint: string, targets: (TextureFormatSource | null)[]): GPUFragmentState {
+    fragmentState(entryPoint: string, targets: (utl.TextureFormatSource | null)[]): GPUFragmentState {
         return {
             module: this.wrapped,
             entryPoint: entryPoint,
             targets: targets.map(target => target !== null 
-                ? asColorTargetState(target)
+                ? utl.asColorTargetState(target)
                 : null
             )
         }
@@ -94,7 +81,7 @@ export class ShaderModule {
         const result: Partial<ShaderModules<D>> = {}
         const tuplePromises = Object.entries(descriptors).map(async ([k, d]) => ({ 
             key: k, 
-            module: await ShaderModule.instance(device, withLabel(d, labelPrefix, k)) 
+            module: await ShaderModule.instance(device, utl.withLabel(d, labelPrefix, k)) 
         }))
         const tuples = await Promise.all(tuplePromises)
         for (const tuple of tuples) {
@@ -109,6 +96,18 @@ export class ShaderModule {
             : await inMemoryShaderModule(device, descriptor.label ?? "shader", descriptor.code, descriptor.templateFunction);
     }
 
+}
+
+export type ShaderModuleDescriptors = Record<string, ShaderModuleDescriptor>
+export type ShaderModuleDescriptor = ShaderModuleCode & {
+    label?: string,
+    compilationHints?: Array<GPUShaderModuleCompilationHint>;
+    templateFunction?: (code: string) => string
+}
+export type ShaderModuleCode = utl.Only<ShaderModuleCodeAttributes, "path"> | utl.Only<ShaderModuleCodeAttributes, "code">
+export type ShaderModuleCodeAttributes = {
+    path: string
+    code: string
 }
 
 async function remoteShaderModule(device: Device, label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = ""): Promise<ShaderModule> {

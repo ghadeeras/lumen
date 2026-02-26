@@ -13,6 +13,17 @@ export type ReplaceValues<T extends Record<string, any>, V> = {
 export type StrictExclude<T, S extends T> = Exclude<T, S>
 export type Supplier<T> = () => T
 
+export function replaceValues<R extends Record<string, any>, B>(
+    record: R,
+    replace: (value: R[keyof R], key: string & (keyof R)) => B
+): ReplaceValues<R, B> {
+    const result: Partial<ReplaceValues<R, B>> = {}
+    for (const key in record) {
+        result[key] = replace(record[key], key)
+    }
+    return result as ReplaceValues<R, B>
+}
+
 export function failure<T>(message: string): T {
     throw new Error(message)
 }
@@ -40,6 +51,10 @@ export function values<K extends string | number | symbol, V>(record: Record<K, 
         result.push(record[key])
     }
     return result
+}
+
+export function later(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0))
 }
 
 export function timeOut<T>(promise: Promise<T>, timeInMilliseconds: number, tag: string): Promise<T> {

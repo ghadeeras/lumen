@@ -1,25 +1,15 @@
+import * as grp from "./group.js"
+import * as utl from "./utils.js"
 import { Device } from "./device.js"
 import { ShaderModule } from "./shader.js"
-import { label, withLabel } from "./utils.js"
-import * as grp from "./group.js"
-import { Redefine } from "../utils.js"
 import { ComputePassBuilder } from "./index.js"
 
+export type CompatibleComputePipeline<L extends PipelineLayout> = ComputePipeline<InferPipelineLayoutDescriptor<L>>
 export type CompatiblePipelineEntries<L extends PipelineLayout> = PipelineEntries<InferPipelineLayoutDescriptor<L>>
 export type InferPipelineLayoutDescriptor<L extends PipelineLayout> = L extends PipelineLayout<infer D> ? D : never
 
-export type PipelineEntries<D extends PipelineLayoutDescriptor> = Partial<{
-    [k in keyof D]: D[k]["layout"] extends grp.BindGroupLayout<infer L> ? grp.BindGroup<L> : never
-}>
-
 export type PipelineLayouts<D extends PipelineLayoutDescriptors> = {
     [k in keyof D]: PipelineLayout<D[k]>
-}
-export type PipelineLayoutDescriptors = Record<string, PipelineLayoutDescriptor>
-export type PipelineLayoutDescriptor = Record<string, PipelineLayoutEntry<grp.BindGroupLayoutDescriptor>>
-export type PipelineLayoutEntry<L extends grp.BindGroupLayoutDescriptor> = {
-    group: number,
-    layout: grp.BindGroupLayout<L>
 }
 export class PipelineLayout<D extends PipelineLayoutDescriptor = {}> {
 
@@ -40,11 +30,11 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor = {}> {
         return await ComputePipeline.instance({ label, layout: this, compute })
     }
 
-    bindGroups<G extends keyof D>(name: G, groups: grp.CompatibleBindGroupDescriptors<D[G]["layout"]>) {
+    bindGroups<G extends keyof D>(name: G, groups: grp.BindGroupDescriptors<D[G]["layout"]["entries"]>): grp.BindGroups<D[G]["layout"]["entries"]> {
         return this.descriptor[name].layout.bindGroups(groups)
     }
 
-    bindGroup<G extends keyof D>(name: G, group: grp.CompatibleBindGroupDescriptor<D[G]["layout"]>) {
+    bindGroup<G extends keyof D>(name: G, group: grp.BindGroupDescriptor<D[G]["layout"]["entries"]>): grp.BindGroup<D[G]["layout"]["entries"]> {
         return this.descriptor[name].layout.bindGroup(group)
     }
 
@@ -60,7 +50,7 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor = {}> {
     static instances<D extends PipelineLayoutDescriptors>(device: Device, descriptors: D, labelPrefix?: string): PipelineLayouts<D> {
         const result: Partial<PipelineLayouts<D>> = {}
         for (const key in descriptors) {
-            result[key] = PipelineLayout.instance(device, descriptors[key], label(labelPrefix, key))
+            result[key] = PipelineLayout.instance(device, descriptors[key], utl.label(labelPrefix, key))
         }
         return result as PipelineLayouts<D>
     }
@@ -79,12 +69,15 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor = {}> {
 
 }
 
-export type ProgrammableStage = Redefine<GPUProgrammableStage, "module", ShaderModule>
-export type ComputePipelineDescriptor<D extends PipelineLayoutDescriptor> = {
-    layout: PipelineLayout<D>
-    label?: string | undefined
-    compute: ProgrammableStage
+export type PipelineLayoutDescriptors = Record<string, PipelineLayoutDescriptor>
+export type PipelineLayoutDescriptor = Record<string, PipelineLayoutEntry<grp.BindGroupLayoutDescriptor>>
+export type PipelineLayoutEntry<L extends grp.BindGroupLayoutDescriptor> = {
+    group: number,
+    layout: grp.BindGroupLayout<L>
 }
+export type PipelineEntries<D extends PipelineLayoutDescriptor> = Partial<{
+    [k in keyof D]: D[k]["layout"] extends grp.BindGroupLayout<infer L> ? grp.BindGroup<L> : never
+}>
 
 export class ComputePipeline<D extends PipelineLayoutDescriptor> {
 
@@ -102,11 +95,15 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
         return this.descriptor.layout
     }
 
-    bindGroups<G extends keyof D>(name: G, groups: grp.CompatibleBindGroupDescriptors<D[G]["layout"]>) {
+    get device() {
+        return this.layout.device
+    }
+
+    bindGroups<G extends keyof D>(name: G, groups: grp.BindGroupDescriptors<D[G]["layout"]["entries"]>): grp.BindGroups<D[G]["layout"]["entries"]> {
         return this.layout.bindGroups(name, groups)
     }
 
-    bindGroup<G extends keyof D>(name: G, group: grp.CompatibleBindGroupDescriptor<D[G]["layout"]>) {
+    bindGroup<G extends keyof D>(name: G, group: grp.BindGroupDescriptor<D[G]["layout"]["entries"]>): grp.BindGroup<D[G]["layout"]["entries"]> {
         return this.layout.bindGroup(name, group)
     }
 
@@ -125,7 +122,7 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
     }
 
     static async instance<D extends PipelineLayoutDescriptor>(descriptor: ComputePipelineDescriptor<D>): Promise<ComputePipeline<D>> {
-        const gpuDescriptor = withLabel<GPUComputePipelineDescriptor>({
+        const gpuDescriptor = utl.withLabel<GPUComputePipelineDescriptor>({
             label: descriptor.label,
             layout: descriptor.layout.wrapped, 
             compute: {
@@ -138,6 +135,13 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
     }
 
 }
+
+export type ComputePipelineDescriptor<D extends PipelineLayoutDescriptor> = {
+    layout: PipelineLayout<D>
+    label?: string | undefined
+    compute: ProgrammableStage
+}
+export type ProgrammableStage = utl.Redefine<GPUProgrammableStage, "module", ShaderModule>
 
 export function group<D extends grp.BindGroupLayoutDescriptor>(group: number, layout: grp.BindGroupLayout<D>): PipelineLayoutEntry<D> {
     return { group, layout }

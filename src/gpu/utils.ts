@@ -1,11 +1,16 @@
-import { Canvas } from "./canvas.js";
-import { Texture } from "./texture.js";
+export * from "../utils.js"
 
-export interface Resource {
+import { DataBuffer } from "./buffer.js";
+import { Canvas } from "./canvas.js";
+import { Sampler, Texture } from "./texture.js";
+
+export interface Resource<R extends DataBuffer | Texture | Sampler> {
 
     label: string
 
     asBindingResource(): GPUBindingResource
+
+    baseResource(): R
 
 }
 
