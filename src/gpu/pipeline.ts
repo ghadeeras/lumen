@@ -1,11 +1,16 @@
 import { Device } from "./device.js"
 import { ShaderModule } from "./shader.js"
-import { label } from "./utils.js"
+import { label, withLabel } from "./utils.js"
 import * as grp from "./group.js"
+import { Redefine } from "../utils.js"
+import { ComputePassBuilder } from "./index.js"
 
-export type PipelineEntries<D extends PipelineLayoutDescriptor> = {
+export type CompatiblePipelineEntries<L extends PipelineLayout> = PipelineEntries<InferPipelineLayoutDescriptor<L>>
+export type InferPipelineLayoutDescriptor<L extends PipelineLayout> = L extends PipelineLayout<infer D> ? D : never
+
+export type PipelineEntries<D extends PipelineLayoutDescriptor> = Partial<{
     [k in keyof D]: D[k]["layout"] extends grp.BindGroupLayout<infer L> ? grp.BindGroup<L> : never
-}
+}>
 
 export type PipelineLayouts<D extends PipelineLayoutDescriptors> = {
     [k in keyof D]: PipelineLayout<D[k]>
@@ -16,7 +21,7 @@ export type PipelineLayoutEntry<L extends grp.BindGroupLayoutDescriptor> = {
     group: number,
     layout: grp.BindGroupLayout<L>
 }
-export class PipelineLayout<D extends PipelineLayoutDescriptor> {
+export class PipelineLayout<D extends PipelineLayoutDescriptor = {}> {
 
     readonly wrapped: GPUPipelineLayout
     
@@ -31,11 +36,19 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor> {
         this.wrapped = device.wrapped.createPipelineLayout({ label, bindGroupLayouts })
     }
 
-    computePipeline(module: ShaderModule, entryPoint: string): ComputePipeline<D> {
-        return new ComputePipeline(this, module, entryPoint)
+    async computePipeline(compute: ProgrammableStage, label?: string): Promise<ComputePipeline<D>> {
+        return await ComputePipeline.instance({ label, layout: this, compute })
     }
 
-    addTo(pass: GPUBindingCommandsMixin, groups: Partial<PipelineEntries<D>>) {
+    bindGroups<G extends keyof D>(name: G, groups: grp.CompatibleBindGroupDescriptors<D[G]["layout"]>) {
+        return this.descriptor[name].layout.bindGroups(groups)
+    }
+
+    bindGroup<G extends keyof D>(name: G, group: grp.CompatibleBindGroupDescriptor<D[G]["layout"]>) {
+        return this.descriptor[name].layout.bindGroup(group)
+    }
+
+    addTo(pass: GPUBindingCommandsMixin, groups: PipelineEntries<D>) {
         for (const k of Object.keys(groups)) {
             const group = groups[k]
             if (group) {
@@ -66,30 +79,62 @@ export class PipelineLayout<D extends PipelineLayoutDescriptor> {
 
 }
 
+export type ProgrammableStage = Redefine<GPUProgrammableStage, "module", ShaderModule>
+export type ComputePipelineDescriptor<D extends PipelineLayoutDescriptor> = {
+    layout: PipelineLayout<D>
+    label?: string | undefined
+    compute: ProgrammableStage
+}
+
 export class ComputePipeline<D extends PipelineLayoutDescriptor> {
 
-    readonly wrapped: GPUComputePipeline
-    readonly descriptor: GPUComputePipelineDescriptor
+    private _label: string
 
-    constructor(readonly layout: PipelineLayout<D>, readonly module: ShaderModule, readonly entryPoint: string) {
-        this.descriptor = {
-            label: label(layout.label, module.descriptor.label, entryPoint),
-            layout: layout.wrapped, 
-            compute: {
-                entryPoint,
-                module: module.shaderModule,
-            }
-        }
-        this.wrapped = layout.device.wrapped.createComputePipeline(this.descriptor)
+    constructor(readonly wrapped: GPUComputePipeline, readonly descriptor: ComputePipelineDescriptor<D>) {
+        this._label = descriptor.label ?? "compute pipeline"
     }
 
-    addTo(pass: GPUComputePassEncoder, groups: Partial<PipelineEntries<D>> = {}) {
+    get label() {
+        return this._label
+    }
+
+    get layout() {
+        return this.descriptor.layout
+    }
+
+    bindGroups<G extends keyof D>(name: G, groups: grp.CompatibleBindGroupDescriptors<D[G]["layout"]>) {
+        return this.layout.bindGroups(name, groups)
+    }
+
+    bindGroup<G extends keyof D>(name: G, group: grp.CompatibleBindGroupDescriptor<D[G]["layout"]>) {
+        return this.layout.bindGroup(name, group)
+    }
+
+    addTo(pass: GPUComputePassEncoder, groups: PipelineEntries<D> = {}): GPUComputePassEncoder {
         pass.setPipeline(this.wrapped)
         this.addGroupsTo(pass, groups)
+        return pass
     }
 
-    addGroupsTo(pass: GPUBindingCommandsMixin, groups: Partial<PipelineEntries<D>>) {
+    addGroupsTo(pass: GPUBindingCommandsMixin, groups: PipelineEntries<D>) {
         this.layout.addTo(pass, groups)
+    }
+
+    withGroups(groups: PipelineEntries<D>): ComputePassBuilder<D> {
+        return new ComputePassBuilder(this, groups)
+    }
+
+    static async instance<D extends PipelineLayoutDescriptor>(descriptor: ComputePipelineDescriptor<D>): Promise<ComputePipeline<D>> {
+        const gpuDescriptor = withLabel<GPUComputePipelineDescriptor>({
+            label: descriptor.label,
+            layout: descriptor.layout.wrapped, 
+            compute: {
+                entryPoint: descriptor.compute.entryPoint,
+                module: descriptor.compute.module.wrapped,
+            }
+        }, descriptor.layout.label, descriptor.compute.module.label, descriptor.compute.entryPoint)
+        const wrapped = await descriptor.layout.device.wrapped.createComputePipelineAsync(gpuDescriptor)
+        return new ComputePipeline(wrapped, descriptor)
     }
 
 }

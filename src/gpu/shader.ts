@@ -1,6 +1,6 @@
 import { Only } from "../utils.js";
 import { Device } from "./device.js";
-import { asColorTargetState, TextureFormatSource } from "./utils.js";
+import { asColorTargetState, TextureFormatSource, withLabel } from "./utils.js";
 
 export type ShaderModules<D extends ShaderModuleDescriptors> = {
     [k in keyof D]: ShaderModule
@@ -19,23 +19,23 @@ type ShaderModuleCodeAttributes = {
 
 export class ShaderModule {
 
-    readonly shaderModule: GPUShaderModule
+    readonly wrapped: GPUShaderModule
     readonly descriptor: Readonly<GPUShaderModuleDescriptor>
 
-    constructor(label: string, readonly device: Device, code: string) {
+    constructor(readonly label: string, readonly device: Device, code: string) {
         this.descriptor = { code, label };
-        this.shaderModule = this.device.wrapped.createShaderModule(this.descriptor)
-        if (this.shaderModule === null) {
+        this.wrapped = this.device.wrapped.createShaderModule(this.descriptor)
+        if (this.wrapped === null) {
             throw new Error("Module compilation failed!")
         }
     }
 
     async hasCompilationErrors() {
-        if (!this.shaderModule.getCompilationInfo) {
+        if (!this.wrapped.getCompilationInfo) {
             // TODO remove check when compilationInfo becomes supported in all browsers. 
             return false
         }
-        const info = await this.shaderModule.getCompilationInfo()
+        const info = await this.wrapped.getCompilationInfo()
         for (const message of info.messages) {
             switch (message.type) {
                 case "info": console.log(message); break
@@ -47,21 +47,21 @@ export class ShaderModule {
         return info.messages.some(m => m.type == "error")
     }
 
-    computePipeline(entryPoint: string, layout: GPUPipelineLayout | "auto" = "auto") {
+    computePipeline(entryPoint?: string, ) {
         return this.device.wrapped.createComputePipeline({
             compute: { 
-                module: this.shaderModule,
+                module: this.wrapped,
                 entryPoint: entryPoint, 
             },
-            layout,
-            label: `${this.shaderModule.label}/${entryPoint}`
+            layout: "auto",
+            label: `${this.wrapped.label}/${entryPoint}`
         })
     }
 
     vertexState(entryPoint: string, buffers: (GPUVertexBufferLayout | number)[]): GPUVertexState {
         const index = [0]
         return {
-            module: this.shaderModule,
+            module: this.wrapped,
             entryPoint: entryPoint,
             buffers: buffers.map(buffer => {
                 if (typeof buffer == 'number') {
@@ -81,7 +81,7 @@ export class ShaderModule {
 
     fragmentState(entryPoint: string, targets: (TextureFormatSource | null)[]): GPUFragmentState {
         return {
-            module: this.shaderModule,
+            module: this.wrapped,
             entryPoint: entryPoint,
             targets: targets.map(target => target !== null 
                 ? asColorTargetState(target)
@@ -90,6 +90,42 @@ export class ShaderModule {
         }
     }
 
+    static async instances<D extends ShaderModuleDescriptors>(device: Device, descriptors: D, labelPrefix?: string): Promise<ShaderModules<D>> {
+        const result: Partial<ShaderModules<D>> = {}
+        const tuplePromises = Object.entries(descriptors).map(async ([k, d]) => ({ 
+            key: k, 
+            module: await ShaderModule.instance(device, withLabel(d, labelPrefix, k)) 
+        }))
+        const tuples = await Promise.all(tuplePromises)
+        for (const tuple of tuples) {
+            result[tuple.key as keyof typeof descriptors] = tuple.module
+        }
+        return result as ShaderModules<D>
+    }
+
+    static async instance(device: Device, descriptor: ShaderModuleDescriptor): Promise<ShaderModule> {
+        return descriptor.path !== undefined
+            ? await remoteShaderModule(device, descriptor.label ?? "shader", descriptor.path, descriptor.templateFunction)
+            : await inMemoryShaderModule(device, descriptor.label ?? "shader", descriptor.code, descriptor.templateFunction);
+    }
+
+}
+
+async function remoteShaderModule(device: Device, label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = ""): Promise<ShaderModule> {
+    const response = await fetch(`${basePath}/${relativePath}`, { method : "get", mode : "no-cors" })
+    const rawShaderCode = await response.text()
+    return await inMemoryShaderModule(device, label, rawShaderCode, templateFunction)
+}
+
+async function inMemoryShaderModule(device: Device, label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<ShaderModule> {
+    const shaderCode = templateFunction(rawShaderCode)
+    const shaderModule = new ShaderModule(label, device, shaderCode)
+
+    if (await shaderModule.hasCompilationErrors()) {
+        throw new Error("Module compilation failed!")
+    }
+
+    return shaderModule
 }
 
 export const renderingShaders = {

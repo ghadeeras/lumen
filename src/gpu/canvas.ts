@@ -72,7 +72,7 @@ export class Canvas {
     attachment(clearColor: GPUColor): GPURenderPassColorAttachment {
         return this.colorTexture 
             ? {
-                view: this.colorTexture.createView().view,
+                view: this.colorTexture.createView().wrapped,
                 resolveTarget: this.context.getCurrentTexture().createView(),
                 storeOp: "discard",
                 loadOp: "clear",

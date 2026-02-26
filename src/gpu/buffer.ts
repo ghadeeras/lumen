@@ -307,7 +307,7 @@ export function copy(segmentSize?: number): SourceClause<DestinationClause<void>
                 }
                 const validSize = upperMultipleOf(4, size + srcOffsetCorrection)
                 srcBuffer.device.enqueueCommands(`copy-${srcBuffer.label}-to-${dstBuffer.label}`, encoder => {
-                    encoder.encoder.copyBufferToBuffer(srcBuffer.wrapped, srcValidOffset, dstBuffer.wrapped, dstValidOffset, validSize)
+                    encoder.wrapped.copyBufferToBuffer(srcBuffer.wrapped, srcValidOffset, dstBuffer.wrapped, dstValidOffset, validSize)
                 });
             }
         }),

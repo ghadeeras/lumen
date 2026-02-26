@@ -40,13 +40,6 @@ export class Device {
         return this._wrapped
     }
     
-    /**
-     * @deprecated Use `wrapped` instead.
-     */
-    get device(): GPUDevice {
-        return this.wrapped
-    }
-
     addDestructionListener(listener: () => void): () => void {
         return this.addListener(listener, this.destructionListeners)
     }
@@ -68,38 +61,11 @@ export class Device {
     }
 
     async shaderModules<D extends shd.ShaderModuleDescriptors>(descriptors: D, labelPrefix?: string): Promise<shd.ShaderModules<D>> {
-        const result: Partial<shd.ShaderModules<D>> = {}
-        for (const k in descriptors) {
-            result[k] = await this.shaderModule(withLabel(descriptors[k], labelPrefix, k))
-        }
-        return result as shd.ShaderModules<D>
+        return shd.ShaderModule.instances(this, descriptors, labelPrefix)
     }
 
     async shaderModule(descriptor: shd.ShaderModuleDescriptor): Promise<shd.ShaderModule> {
-        return descriptor.path !== undefined
-            ? await this.remoteShaderModule(descriptor.label ?? "shader", descriptor.path, descriptor.templateFunction)
-            : await this.inMemoryShaderModule(descriptor.label ?? "shader", descriptor.code, descriptor.templateFunction);
-    }
-
-    async loadShaderModule(relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<shd.ShaderModule> {
-        return await this.remoteShaderModule(relativePath, relativePath, templateFunction, basePath)
-    }
-    
-    async remoteShaderModule(label: string, relativePath: string, templateFunction: (code: string) => string = s => s, basePath = "/shaders"): Promise<shd.ShaderModule> {
-        const response = await fetch(`${basePath}/${relativePath}`, { method : "get", mode : "no-cors" })
-        const rawShaderCode = await response.text()
-        return await this.inMemoryShaderModule(label, rawShaderCode, templateFunction)
-    }
-
-    async inMemoryShaderModule(label: string, rawShaderCode: string, templateFunction: (code: string) => string = s => s): Promise<shd.ShaderModule> {
-        const shaderCode = templateFunction(rawShaderCode)
-        const shaderModule = new shd.ShaderModule(label, this, shaderCode)
-
-        if (await shaderModule.hasCompilationErrors()) {
-            throw new Error("Module compilation failed!")
-        }
-
-        return shaderModule
+        return shd.ShaderModule.instance(this, descriptor)
     }
 
     enqueueCommands(label: string, encoding: (encoder: CommandEncoder) => void) {

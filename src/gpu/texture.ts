@@ -109,9 +109,9 @@ export class Texture implements Resource {
         const pipeline = await this.device.wrapped.createRenderPipelineAsync({
             label: "mipmap pipeline",
             layout: "auto",
-            vertex: { module: shader.shaderModule },
+            vertex: { module: shader.wrapped },
             fragment: { 
-                module: shader.shaderModule,
+                module: shader.wrapped,
                 targets: [{
                     format: this._wrapped.format
                 }] 
@@ -131,7 +131,7 @@ export class Texture implements Resource {
                     layout: pipeline.getBindGroupLayout(0),
                     entries: [
                         { binding: 0, resource: this.mipLevel("2d", level - 1, l) }, 
-                        { binding: 1, resource: sampler.sampler }
+                        { binding: 1, resource: sampler.wrapped }
                     ]
                 })
                 this.device.enqueueCommands("mipmapping", encoder => {
@@ -162,16 +162,16 @@ export class Texture implements Resource {
             baseMipLevel: level,
             mipLevelCount: 1,
             dimension
-        }).view
+        }).wrapped
     }
 }
 
 export class TextureView implements Resource {
 
-    readonly view: GPUTextureView
+    readonly wrapped: GPUTextureView
     
     constructor(readonly texture: Texture, readonly descriptor: GPUTextureViewDescriptor | undefined = undefined) {
-        this.view = texture.wrapped.createView(descriptor)
+        this.wrapped = texture.wrapped.createView(descriptor)
     }
 
     get label() {
@@ -180,7 +180,7 @@ export class TextureView implements Resource {
 
     colorAttachment(clearValue: GPUColor | undefined = undefined): GPURenderPassColorAttachment {
         return {
-            view: this.view,
+            view: this.wrapped,
             storeOp: clearValue === undefined || this.texture.isAnyOf("COPY_SRC", "TEXTURE_BINDING") ? "store" : "discard",
             loadOp: clearValue === undefined ? "load" : "clear",
             clearValue: clearValue,
@@ -189,7 +189,7 @@ export class TextureView implements Resource {
 
     depthAttachment(clearValue: number | undefined = 1): GPURenderPassDepthStencilAttachment {
         return {
-            view: this.view,
+            view: this.wrapped,
             depthStoreOp: clearValue === undefined || this.texture.isAnyOf("COPY_SRC", "TEXTURE_BINDING") ? "store" : "discard",
             depthLoadOp: clearValue === undefined ? "load" : "clear",
             depthClearValue: clearValue,
@@ -198,17 +198,17 @@ export class TextureView implements Resource {
     }
 
     asBindingResource(): GPUBindingResource {
-        return this.view
+        return this.wrapped
     }
     
 }
 
 export class Sampler implements Resource {
 
-    readonly sampler: GPUSampler
+    readonly wrapped: GPUSampler
 
     constructor(readonly device: Device, readonly descriptor: GPUSamplerDescriptor | undefined = undefined) {
-        this.sampler = this.device.wrapped.createSampler(descriptor)
+        this.wrapped = this.device.wrapped.createSampler(descriptor)
     }
 
     get label() {
@@ -216,7 +216,7 @@ export class Sampler implements Resource {
     }
    
     asBindingResource(): GPUBindingResource {
-        return this.sampler
+        return this.wrapped
     }
     
 }

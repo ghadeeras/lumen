@@ -5,6 +5,9 @@ import * as bfr from "./buffer.js";
 import * as txr from "./texture.js";
 import * as utl from "./utils.js";
 
+export type CompatibleBindGroup<L extends BindGroupLayout> = BindGroup<InferBindGroupLayoutDescriptor<L>>
+export type CompatibleBindGroups<L extends BindGroupLayout> = BindGroups<InferBindGroupLayoutDescriptor<L>>
+
 export type BindGroups<L extends BindGroupLayoutDescriptor = {}, G extends BindGroupDescriptors<L> = {}> = {
     [K in keyof G]: BindGroup<L>
 };
@@ -34,6 +37,10 @@ class BindGroupImpl<L extends BindGroupLayoutDescriptor = {}> implements BindGro
     }
     
 }
+
+export type CompatibleBindGroupDescriptor<L extends BindGroupLayout> = BindGroupDescriptor<InferBindGroupLayoutDescriptor<L>>
+export type CompatibleBindGroupDescriptors<L extends BindGroupLayout> = BindGroupDescriptors<InferBindGroupLayoutDescriptor<L>>
+export type InferBindGroupLayoutDescriptor<L extends BindGroupLayout> = L extends BindGroupLayout<infer D> ? D : never
 
 export type BindGroupDescriptors<L extends BindGroupLayoutDescriptor = {}> = Record<string, BindGroupDescriptor<L>> 
 export type BindGroupDescriptor<L extends BindGroupLayoutDescriptor = {}> = { 
