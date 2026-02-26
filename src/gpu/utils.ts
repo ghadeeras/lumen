@@ -1,3 +1,5 @@
+export * from "../utils.js"
+
 import { Canvas } from "./canvas.js";
 import { Texture } from "./texture.js";
 

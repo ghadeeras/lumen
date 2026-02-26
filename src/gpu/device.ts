@@ -1,4 +1,4 @@
-import * as utl from "../utils.js"
+import * as utl from "./utils.js"
 import * as pln from "./pipeline.js"
 import * as shd from "./shader.js"
 import * as grp from "./group.js"
@@ -6,7 +6,6 @@ import * as buf from "./buffer.js"
 import * as txr from "./texture.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
-import { withLabel } from "./utils.js"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
@@ -31,6 +30,7 @@ export class Device {
             console.warn(`GPU Device '${label}' was lost because:`, info.message, ". Attempting to recover ...")
             const { device, descriptor: _ } = await deviceAndDescriptor(this.deviceDescriptor)
             this._wrapped = device
+            this._wrapped.lost.then(info => this.handleDeviceLoss(info))
             console.info(`GPU Device '${label}' was successfully recovered.`)
             this.recoveryListeners.forEach(listener => listener())
         }
@@ -82,7 +82,7 @@ export class Device {
         return encoder.finish()
     }
 
-    canvas(element: HTMLCanvasElement | string, sampleCount = 1): Canvas {
+    canvas(element: HTMLCanvasElement | string, sampleCount: 1 | 4 = 1): Canvas {
         return new Canvas(this, element, sampleCount)
     }
 
@@ -90,7 +90,7 @@ export class Device {
         return new txr.Texture(this, descriptor)
     }
 
-    sampler(descriptor: GPUSamplerDescriptor | undefined = undefined) {
+    sampler(descriptor?: GPUSamplerDescriptor): txr.Sampler {
         return new txr.Sampler(this, descriptor)
     }
 

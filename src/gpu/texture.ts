@@ -1,7 +1,7 @@
+import * as utl from "./utils.js"
 import { Device } from "./device.js"
-import { formatOf, Resource } from "./utils.js"
 
-export class Texture implements Resource {
+export class Texture implements utl.Resource {
 
     private _wrapped: GPUTexture
 
@@ -50,7 +50,7 @@ export class Texture implements Resource {
     depthState(state: Partial<GPUDepthStencilState> = {}): GPUDepthStencilState {
         return {
             ...state,
-            format: state.format ?? formatOf(this.descriptor.format),
+            format: state.format ?? utl.formatOf(this.descriptor.format),
             depthCompare: state.depthCompare ?? "less",
             depthWriteEnabled: state.depthWriteEnabled ?? true
         }
@@ -166,7 +166,7 @@ export class Texture implements Resource {
     }
 }
 
-export class TextureView implements Resource {
+export class TextureView implements utl.Resource {
 
     readonly wrapped: GPUTextureView
     
@@ -203,7 +203,7 @@ export class TextureView implements Resource {
     
 }
 
-export class Sampler implements Resource {
+export class Sampler implements utl.Resource {
 
     readonly wrapped: GPUSampler
 

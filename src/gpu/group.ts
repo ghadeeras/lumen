@@ -1,25 +1,20 @@
-import { Device } from "./device.js";
-import { Element } from "./types.js";
-import { PipelineLayoutEntry } from "./index.js";
 import * as bfr from "./buffer.js";
 import * as txr from "./texture.js";
 import * as utl from "./utils.js";
+import { Device } from "./device.js";
+import { Element } from "./types.js";
+import { PipelineLayoutEntry } from "./index.js";
 
 export type CompatibleBindGroup<L extends BindGroupLayout> = BindGroup<InferBindGroupLayoutDescriptor<L>>
 export type CompatibleBindGroups<L extends BindGroupLayout> = BindGroups<InferBindGroupLayoutDescriptor<L>>
+export type CompatibleBindGroupDescriptor<L extends BindGroupLayout> = BindGroupDescriptor<InferBindGroupLayoutDescriptor<L>>
+export type CompatibleBindGroupDescriptors<L extends BindGroupLayout> = BindGroupDescriptors<InferBindGroupLayoutDescriptor<L>>
+export type InferBindGroupLayoutDescriptor<L extends BindGroupLayout> = L extends BindGroupLayout<infer D> ? D : never
 
 export type BindGroups<L extends BindGroupLayoutDescriptor = {}, G extends BindGroupDescriptors<L> = {}> = {
     [K in keyof G]: BindGroup<L>
 };
-
-export interface BindGroup<L extends BindGroupLayoutDescriptor = {}> {
-    readonly label: string 
-    readonly device: Device
-    readonly layout: BindGroupLayout<L>
-    readonly entries: BindGroupDescriptor<L>
-    readonly wrapped: GPUBindGroup
-}
-class BindGroupImpl<L extends BindGroupLayoutDescriptor = {}> implements BindGroup<L> {
+export class BindGroup<L extends BindGroupLayoutDescriptor = {}> {
 
     readonly device: Device
     readonly wrapped: GPUBindGroup
@@ -38,10 +33,6 @@ class BindGroupImpl<L extends BindGroupLayoutDescriptor = {}> implements BindGro
     
 }
 
-export type CompatibleBindGroupDescriptor<L extends BindGroupLayout> = BindGroupDescriptor<InferBindGroupLayoutDescriptor<L>>
-export type CompatibleBindGroupDescriptors<L extends BindGroupLayout> = BindGroupDescriptors<InferBindGroupLayoutDescriptor<L>>
-export type InferBindGroupLayoutDescriptor<L extends BindGroupLayout> = L extends BindGroupLayout<infer D> ? D : never
-
 export type BindGroupDescriptors<L extends BindGroupLayoutDescriptor = {}> = Record<string, BindGroupDescriptor<L>> 
 export type BindGroupDescriptor<L extends BindGroupLayoutDescriptor = {}> = { 
     [K in keyof L]: InferResourceFromBindGroupLayoutEntry<L[K]> 
@@ -52,7 +43,6 @@ export type InferResourceFromBindGroupLayoutEntry<T extends BindGroupLayoutEntry
 export type BindGroupLayouts<D extends BindGroupLayoutDescriptors = {}> = {
     [K in keyof D]: BindGroupLayout<D[K]>
 };
-
 export class BindGroupLayout<L extends BindGroupLayoutDescriptor = {}> {
 
     readonly wrapped: GPUBindGroupLayout
@@ -80,7 +70,7 @@ export class BindGroupLayout<L extends BindGroupLayoutDescriptor = {}> {
     }
 
     bindGroup(entries: BindGroupDescriptor<L>, label?: string): BindGroup<L> {
-        return new BindGroupImpl(this, label ?? this.labelFrom(entries), entries)
+        return new BindGroup(this, label ?? this.labelFrom(entries), entries)
     }
 
     private labelFrom(entries: BindGroupDescriptor<L>): string {
