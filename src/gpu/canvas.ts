@@ -1,4 +1,4 @@
-import { required } from "../utils.js"
+import { failure, required } from "../utils.js"
 import { Device } from "./device.js"
 import { Texture } from "./texture.js"
 
@@ -22,13 +22,15 @@ export class Canvas {
             height: this.element.height, 
         }
 
+        const format = configs.format ?? navigator.gpu.getPreferredCanvasFormat()
+        const viewFormats = configs.viewFormats ?? withSrgbFormats(format)
         this.configs = {
             device: device.wrapped,
-            format: configs.format ?? navigator.gpu.getPreferredCanvasFormat(),
+            format: format,
             usage: configs.usage ?? GPUTextureUsage.RENDER_ATTACHMENT,
             alphaMode: configs.alphaMode ?? "opaque",
             colorSpace: configs.colorSpace ?? "srgb",
-            viewFormats: configs.viewFormats ?? [],
+            viewFormats: viewFormats,
         }
         this.context.configure(this.configs)
 
@@ -69,17 +71,22 @@ export class Canvas {
         return this.configs.format
     }
 
-    attachment(clearColor: GPUColor): GPURenderPassColorAttachment {
+    get srgbFormat(): GPUTextureFormat {
+        return srgb(this.format)
+    }
+
+    attachment(clearColor: GPUColor, srgb: boolean = false): GPURenderPassColorAttachment {
+        const descriptor = srgb ? { format: this.srgbFormat } : {}
         return this.colorTexture 
             ? {
-                view: this.colorTexture.createView().wrapped,
-                resolveTarget: this.context.getCurrentTexture().createView(),
+                view: this.colorTexture.createView(descriptor).wrapped,
+                resolveTarget: this.context.getCurrentTexture().createView(descriptor),
                 storeOp: "discard",
                 loadOp: "clear",
                 clearValue: clearColor,
             } 
             : {
-                view: this.context.getCurrentTexture().createView(),
+                view: this.context.getCurrentTexture().createView(descriptor),
                 storeOp: "store",
                 loadOp: "clear",
                 clearValue: clearColor,
@@ -113,4 +120,12 @@ export class Canvas {
         this.context.unconfigure()
     }
 
+}
+
+function withSrgbFormats(format: GPUTextureFormat): GPUTextureFormat[] {
+    return format === "rgba8unorm" || format === "bgra8unorm" ? [format, `${format}-srgb`] : [format]
+}
+
+function srgb(format: GPUTextureFormat): GPUTextureFormat {
+    return format === "rgba8unorm" || format === "bgra8unorm" ? `${format}-srgb` : failure(`No srgb equivalent format to '${format}'`)
 }
