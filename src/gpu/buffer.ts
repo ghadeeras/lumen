@@ -182,6 +182,10 @@ export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffe
         }
     }
 
+    view(segment: typ.DataSegment): DataBufferView {
+        return new DataBufferView(this, segment)
+    }
+
     static instances<D extends DataBufferDescriptors>(device: Device, descriptors: D, labelPrefix?: string): DataBuffers<D> {
         return utl.replaceValues(descriptors, (descriptor, key) => 
             DataBuffer.instance(device, utl.withLabel(descriptor, labelPrefix, key))
@@ -208,6 +212,27 @@ export type DataBufferDescriptor = {
     size: number
     data?: never
 })
+
+export class DataBufferView implements utl.Resource<DataBuffer> {
+
+    constructor(readonly gpuBuffer: DataBuffer, readonly segment: typ.DataSegment) {}
+    
+    get label(): string {
+        return this.gpuBuffer.label
+    }
+    
+    asBindingResource(): GPUBindingResource {
+        return {
+            buffer: this.gpuBuffer.wrapped,
+            ...this.segment,
+        }
+    }
+
+    baseResource(): DataBuffer {
+        return this.gpuBuffer
+    }
+
+}
 
 export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
 

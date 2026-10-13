@@ -128,6 +128,7 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
             compute: {
                 entryPoint: descriptor.compute.entryPoint,
                 module: descriptor.compute.module.wrapped,
+                constants: descriptor.compute.constants
             }
         }, descriptor.layout.label, descriptor.compute.module.label, descriptor.compute.entryPoint)
         const wrapped = await descriptor.layout.device.wrapped.createComputePipelineAsync(gpuDescriptor)

@@ -120,20 +120,20 @@ export class BindGroupLayoutEntry<R extends utl.Resource<any> = utl.Resource<any
 
 }
 
-export function uniform<T>(contentType: Element<T>, hasDynamicOffset?: boolean): BufferBindingLayout<T> {
-    return bufferBindingLayout<T>("uniform", contentType, hasDynamicOffset)
+export function uniform<T>(contentType: Element<T>, length: number = 1, hasDynamicOffset?: boolean): BufferBindingLayout<T> {
+    return bufferBindingLayout<T>("uniform", contentType, length, hasDynamicOffset)
 }
 
-export function storage<T>(accessMode: AccessMode, contentType: Element<T>, hasDynamicOffset?: boolean): BufferBindingLayout<T> {
-    return bufferBindingLayout<T>(accessMode != "read" ? "storage" : "read-only-storage", contentType, hasDynamicOffset)
+export function storage<T>(accessMode: AccessMode, contentType: Element<T>, length: number = 1, hasDynamicOffset?: boolean): BufferBindingLayout<T> {
+    return bufferBindingLayout<T>(accessMode != "read" ? "storage" : "read-only-storage", contentType, length, hasDynamicOffset)
 }
 
-function bufferBindingLayout<T>(type: GPUBufferBindingType, contentType: Element<T>, hasDynamicOffset: boolean | undefined): BufferBindingLayout<T> {
+function bufferBindingLayout<T>(type: GPUBufferBindingType, contentType: Element<T>, length: number, hasDynamicOffset: boolean | undefined): BufferBindingLayout<T> {
     return new BufferBindingLayout({
         type,
-        minBindingSize: contentType.size,
+        minBindingSize: contentType.size + contentType.paddedSize * (length - 1),
         hasDynamicOffset
-    }, contentType);
+    }, contentType, length);
 }
 
 export function texture_storage_1d(format: GPUTextureFormat, accessMode: AccessMode = "write"): TextureStorageBindingLayout {
@@ -237,9 +237,9 @@ export abstract class ResourceBindingLayout<R extends utl.Resource<any> = utl.Re
 
 }
 
-export class BufferBindingLayout<T> extends ResourceBindingLayout<bfr.DataBuffer | bfr.SyncBuffer> {
+export class BufferBindingLayout<T> extends ResourceBindingLayout<bfr.DataBuffer | bfr.SyncBuffer | bfr.DataBufferView> {
 
-    constructor(readonly buffer: GPUBufferBindingLayout, readonly contentType: Element<T>) {
+    constructor(readonly buffer: GPUBufferBindingLayout, readonly contentType: Element<T>, readonly length: number) {
         super({ buffer })
     }
 
