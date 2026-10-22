@@ -17,7 +17,7 @@ export class Device {
     private destructionListeners: (() => void)[] = []
     private recoveryListeners: (() => void)[] = []
 
-    constructor(private _wrapped: GPUDevice, private deviceDescriptor: DeviceDescriptor) {
+    constructor(private _wrapped: GPUDevice, private descriptor: DeviceDescriptor, readonly webgpu: WebGPU) {
         this._wrapped.lost.then(info => this.handleDeviceLoss(info))
     }
 
@@ -28,7 +28,7 @@ export class Device {
             this.destructionListeners.forEach(listener => listener())
         } else {
             console.warn(`GPU Device '${label}' was lost because:`, info.message, ". Attempting to recover ...")
-            const { device, descriptor: _ } = await deviceAndDescriptor(this.deviceDescriptor)
+            const { device, descriptor: _ } = await deviceAndInfo(this.descriptor, this.webgpu)
             this._wrapped = device
             this._wrapped.lost.then(info => this.handleDeviceLoss(info))
             console.info(`GPU Device '${label}' was successfully recovered.`)
@@ -167,7 +167,6 @@ export class Device {
             [threeDX, threeDY, threeDZ]
         ]
     }
-    
 
     async monitorErrors<T>(filter: GPUErrorFilter, expression: () => T): Promise<T> {
         this.wrapped.pushErrorScope(filter)
@@ -179,20 +178,19 @@ export class Device {
         return result
     }    
 
-    static async instance(deviceDescriptor: DeviceDescriptor = {}): Promise<Device> {
-        var { device, descriptor } = await deviceAndDescriptor(deviceDescriptor)
+    static async instance(deviceDescriptor: DeviceDescriptor = {}, webgpu: WebGPU = nativeWebGPU): Promise<Device> {
+        var { device, descriptor } = await deviceAndInfo(deviceDescriptor, webgpu)
         return new Device(device, {
             ...deviceDescriptor,
             gpuDeviceDescriptor: async () => descriptor,
-        })
+        }, webgpu)
     }
 
 }
 
-async function deviceAndDescriptor(deviceDescriptor: DeviceDescriptor) {
-    const gpu = utl.required(navigator.gpu, () => "WebGPU is not supported in this environment!")
+async function deviceAndInfo(deviceDescriptor: DeviceDescriptor, webgpu: WebGPU) {
     const { gpuDeviceDescriptor, xrCompatible } = defaultedDescriptor(deviceDescriptor)
-    const adapter = await requestAdapter(gpu, xrCompatible)
+    const adapter = await requestAdapter(webgpu.gpu, xrCompatible)
     var descriptor = await gpuDeviceDescriptor(adapter)
     const device = await requestDevice(adapter, descriptor)
     return { device, descriptor }
@@ -231,3 +229,22 @@ async function requestDevice(adapter: GPUAdapter, deviceDescriptor: GPUDeviceDes
     console.debug("GPU Device Limits:", device.limits)
     return device
 }
+
+export interface WebGPU {
+    readonly gpu: GPU
+    context(canvas: HTMLCanvasElement): GPUCanvasContext | null
+}
+
+class NativeWebGPU implements WebGPU {
+    
+    get gpu(): GPU {
+        return utl.required(navigator.gpu, () => "WebGPU is not supported in this environment!")
+    }
+
+    context(canvas: HTMLCanvasElement): GPUCanvasContext | null {
+        return canvas.getContext("webgpu")
+    }
+
+}
+
+export const nativeWebGPU: WebGPU = new NativeWebGPU()
