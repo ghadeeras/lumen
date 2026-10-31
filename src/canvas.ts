@@ -1,4 +1,4 @@
-import { failure, required } from "../utils.js"
+import { failure, required } from "./utils.js"
 import { Device } from "./device.js"
 import { Texture } from "./texture.js"
 

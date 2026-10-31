@@ -6,6 +6,7 @@ import * as buf from "./buffer.js"
 import * as txr from "./texture.js"
 import { Canvas } from "./canvas.js"
 import { CommandEncoder } from "./encoder.js"
+import { userAgentWebGPU, WebGPU } from "webgxx"
 
 export type DeviceDescriptor = {
     gpuDeviceDescriptor?: (adapter: GPUAdapter) => Promise<GPUDeviceDescriptor>
@@ -178,7 +179,7 @@ export class Device {
         return result
     }    
 
-    static async instance(deviceDescriptor: DeviceDescriptor = {}, webgpu: WebGPU = nativeWebGPU): Promise<Device> {
+    static async instance(deviceDescriptor: DeviceDescriptor = {}, webgpu: WebGPU = userAgentWebGPU): Promise<Device> {
         var { device, descriptor } = await deviceAndInfo(deviceDescriptor, webgpu)
         return new Device(device, {
             ...deviceDescriptor,
@@ -229,22 +230,3 @@ async function requestDevice(adapter: GPUAdapter, deviceDescriptor: GPUDeviceDes
     console.debug("GPU Device Limits:", device.limits)
     return device
 }
-
-export interface WebGPU {
-    readonly gpu: GPU
-    context(canvas: HTMLCanvasElement): GPUCanvasContext | null
-}
-
-class NativeWebGPU implements WebGPU {
-    
-    get gpu(): GPU {
-        return utl.required(navigator.gpu, () => "WebGPU is not supported in this environment!")
-    }
-
-    context(canvas: HTMLCanvasElement): GPUCanvasContext | null {
-        return canvas.getContext("webgpu")
-    }
-
-}
-
-export const nativeWebGPU: WebGPU = new NativeWebGPU()
