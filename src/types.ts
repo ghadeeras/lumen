@@ -512,6 +512,32 @@ export class Struct<T extends Record<string, Element<any>>> extends BaseElement<
         return new Vertex(attributes, this)
     }
 
+    asObject(getter: <A>(element: Element<A>) => A, setter: <A>(element: Element<A>, value: A) => void): StructTypeOf<T> {
+        const result: Partial<StructTypeOf<T>> = {}
+        for (const key of this.membersOrder) {
+            const member = this.members[key]
+            if (member instanceof Struct) {
+                const memberValue = member.asObject(getter, setter)
+                Object.defineProperty(result, key, {
+                    get() { return memberValue },
+                    set(value: any) { return setter(member, value) }
+                })
+            } else if (member instanceof StaticArray && member.item instanceof Struct) {
+                const memberValue = (member as StaticArray<any, Struct<any>>).items.map(i => i.asObject(getter, setter))
+                Object.defineProperty(result, key, {
+                    get() { return memberValue },
+                    set(value: any) { return setter(member, value) }
+                })
+            } else {
+                Object.defineProperty(result, key, {
+                    get() { return getter(member) },
+                    set(value: any) { return setter(member, value) }
+                })
+            }
+        }
+        return result as StructTypeOf<T>
+    }
+
 }
 
 export class Vertex<T extends Record<string, Element<any>>> {

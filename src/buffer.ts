@@ -24,13 +24,17 @@ export class SyncBuffer implements utl.Resource<DataBuffer> {
         return this.gpuBuffer.asBindingResource(binding)
     }
 
-    get<T>(element: typ.Element<T>): T {
-        return element.read(this.cpuBuffer)
+    as<S extends typ.Struct<any>>(element: S): typ.StructTypeOf<S["members"]> {
+        return element.asObject(e => this.get(e), (e, v) => this.set(e, v))
     }
 
-    set<T>(element: typ.Element<T>, value: T) {
-        element.write(this.cpuBuffer, value)
-        this.dirty(element.range())
+    get<T>(element: typ.Element<T>, index: number = 0): T {
+        return element.read(this.cpuBuffer, index)
+    }
+
+    set<T>(element: typ.Element<T>, value: T, index: number = 0) {
+        element.write(this.cpuBuffer, value, index)
+        this.dirty(element.range(index))
     }
 
     private dirty(range: [number, number]) {
