@@ -1,4 +1,4 @@
-export interface DataSegment {
+export interface AddressSegment {
 
     offset?: number
 
@@ -6,7 +6,7 @@ export interface DataSegment {
     
 }
 
-export interface Element<T> extends DataSegment {
+export interface Element<T> extends AddressSegment {
 
     alignment: number
 
@@ -24,19 +24,15 @@ export interface Element<T> extends DataSegment {
 
     range(index?: number, count?: number): [number, number]
 
-    segment(index?: number, count?: number): DataSegment
+    segment(index?: number, count?: number): AddressSegment
 
-    read(view: DataView): T
+    read(view: DataView, index?: number): T
 
-    write(view: DataView, value: T): void
+    write(view: DataView, value: T, index?: number): void
 
-    readOne(view: DataView, index: number): T
+    readMany(view: DataView, count: number, index?: number): T[]
 
-    writeOne(view: DataView, index: number, value: T): void
-
-    readMulti(view: DataView, index: number, count: number): T[]
-
-    writeMulti(view: DataView, index: number, values: T[]): void
+    writeMany(view: DataView, values: T[], index?: number): void
 
     clone(offset: number, stride: number, packed: boolean): Element<T>
 
@@ -47,10 +43,6 @@ export interface Element<T> extends DataSegment {
 export type DataTypeOf<T extends Element<any>> = T extends Element<infer V> ? V : never
 
 export type StructTypeOf<T  extends Record<string, Element<any>>> = {
-    [K in keyof T]: DataTypeOf<T[K]>
-}
-
-export type VertexStructTypeOf<T  extends Record<string, Element<any>>> = {
     [K in keyof T]: DataTypeOf<T[K]>
 }
 
@@ -70,45 +62,48 @@ abstract class BaseElement<T> implements Element<T> {
         stride: number,
         packed: boolean,
     ) {
+        this.packed = packed
         this.alignment = packed ? 1 : alignment
         this.size = size
-        this.paddedSize = Math.ceil(size / this.alignment) * this.alignment
-        this.offset = Math.ceil(offset / this.alignment) * this.alignment
-        this.packed = packed
+        this.paddedSize = alignTo(this.alignment, size)
+        this.offset = alignTo(this.alignment, offset)
         this.stride = stride < this.paddedSize ? this.paddedSize : stride
     }
 
     view(dataOrSize: T[] | number = 1): DataView {
         if (typeof dataOrSize == 'number') {
-            return new DataView(new ArrayBuffer((dataOrSize - 1) * this.stride + this.size))
+            return this.emptyView(dataOrSize)
         } else {
-            const result = new DataView(new ArrayBuffer((dataOrSize.length - 1) * this.stride + this.size))
-            this.writeMulti(result, 0, dataOrSize)
+            const result = this.emptyView(dataOrSize.length)
+            this.writeMany(result, dataOrSize)
             return result
         }
     }
 
-    segment(index = 0, count = 1): DataSegment {
+    private emptyView(size: number): DataView {
+        return new DataView(new ArrayBuffer((size - 1) * this.stride + this.paddedSize))
+    }
+
+    segment(index = 0, count = 1): AddressSegment {
         const [l1, l2] = this.range(index, count)
         return { offset: l1, size: l2 - l1 }
     }
 
     range(index = 0, count = 1): [number, number] {
-        return [
-            this.offset + index * this.paddedSize, 
-            this.offset + (index + count) * this.paddedSize
-        ]
+        const lo = this.offset + index * this.stride
+        const hi = lo + (count - 1) * this.stride + this.paddedSize
+        return [lo, Math.max(hi, lo)]
     }
 
-    read(view: DataView): T {
-        return this.readOne(view, 0)
+    read(view: DataView, index = 0): T {
+        return this.readOne(view, index)
     }
 
-    write(view: DataView, value: T): void {
-        this.writeOne(view, 0, value)
+    write(view: DataView, value: T, index = 0): void {
+        this.writeOne(view, value, index)
     }
 
-    readMulti(view: DataView, index: number, count: number): T[] {
+    readMany(view: DataView, count: number, index: number = 0): T[] {
         const values: T[] = new Array(count)
         for (let i = 0; i < count; i++) {
             values[i] = this.readOne(view, index + i)
@@ -116,9 +111,9 @@ abstract class BaseElement<T> implements Element<T> {
         return values
     }
 
-    writeMulti(view: DataView, index: number, values: T[]): void {
+    writeMany(view: DataView, values: T[], index: number = 0): void {
         for (let i = 0; i < values.length; i++) {
-            this.writeOne(view, index + i, values[i])
+            this.writeOne(view, values[i], index + i)
         }
     }
 
@@ -126,9 +121,9 @@ abstract class BaseElement<T> implements Element<T> {
         return new StaticArray(this, length, 0, 0, false)
     }
 
-    abstract readOne(view: DataView, index: number): T
+    protected abstract readOne(view: DataView, index: number): T
 
-    abstract writeOne(view: DataView, index: number, value: T): void
+    protected abstract writeOne(view: DataView, value: T, index: number): void
 
     abstract clone(offset: number, stride: number, packed: boolean): Element<T>
     
@@ -170,11 +165,11 @@ abstract class Primitive32 extends VertexElement<number> {
         super(format, 4, 4, offset, stride, packed)
     }
 
-    readOne(view: DataView, index: number): number {
+    protected readOne(view: DataView, index: number): number {
         return this.getter(view, this.offset + this.stride * index)
     }
 
-    writeOne(view: DataView, index: number, value: number): void {
+    protected writeOne(view: DataView, value: number, index: number): void {
         this.setter(view, this.offset + this.stride * index, value)
     }
 
@@ -270,16 +265,16 @@ export class Vec2<T extends Primitive32> extends VecN<[number, number]> {
         this.y = clone(component, this.x.offset + this.x.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [number, number] {
+    protected readOne(view: DataView, index: number): [number, number] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [number, number]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
+    protected writeOne(view: DataView, value: [number, number], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Vec2<T> {
@@ -301,18 +296,18 @@ export class Vec3<T extends Primitive32> extends VecN<[number, number, number]> 
         this.z = clone(component, this.y.offset + this.y.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [number, number, number] {
+    protected readOne(view: DataView, index: number): [number, number, number] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
-            this.z.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
+            this.z.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [number, number, number]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
-        this.z.writeOne(view, index, value[2])
+    protected writeOne(view: DataView, value: [number, number, number], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
+        this.z.write(view, value[2], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Vec3<T> {
@@ -336,20 +331,20 @@ export class Vec4<T extends Primitive32> extends VecN<[number, number, number, n
         this.w = clone(component, this.z.offset + this.z.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [number, number, number, number] {
+    protected readOne(view: DataView, index: number): [number, number, number, number] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
-            this.z.readOne(view, index),
-            this.w.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
+            this.z.read(view, index),
+            this.w.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [number, number, number, number]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
-        this.z.writeOne(view, index, value[2])
-        this.w.writeOne(view, index, value[3])
+    protected writeOne(view: DataView, value: [number, number, number, number], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
+        this.z.write(view, value[2], index)
+        this.w.write(view, value[3], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Vec4<T> {
@@ -358,7 +353,7 @@ export class Vec4<T extends Primitive32> extends VecN<[number, number, number, n
 
 }
 
-export class Mat2<T, V extends Element<T>> extends BaseElement<[T, T]> {
+export class Mat2<T extends number[], V extends VecN<T>> extends BaseElement<[T, T]> {
 
     readonly x: V
     readonly y: V
@@ -369,16 +364,16 @@ export class Mat2<T, V extends Element<T>> extends BaseElement<[T, T]> {
         this.y = clone(component, this.x.offset + this.x.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [T, T] {
+    protected readOne(view: DataView, index: number): [T, T] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [T, T]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
+    protected writeOne(view: DataView, value: [T, T], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Mat2<T, V> {
@@ -387,7 +382,7 @@ export class Mat2<T, V extends Element<T>> extends BaseElement<[T, T]> {
 
 }
 
-export class Mat3<T, V extends Element<T>> extends BaseElement<[T, T, T]> {
+export class Mat3<T extends number[], V extends VecN<T>> extends BaseElement<[T, T, T]> {
 
     readonly x: V
     readonly y: V
@@ -400,18 +395,18 @@ export class Mat3<T, V extends Element<T>> extends BaseElement<[T, T, T]> {
         this.z = clone(component, this.y.offset + this.y.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [T, T, T] {
+    protected readOne(view: DataView, index: number): [T, T, T] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
-            this.z.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
+            this.z.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [T, T, T]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
-        this.z.writeOne(view, index, value[2])
+    protected writeOne(view: DataView, value: [T, T, T], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
+        this.z.write(view, value[2], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Mat3<T, V> {
@@ -420,7 +415,7 @@ export class Mat3<T, V extends Element<T>> extends BaseElement<[T, T, T]> {
 
 }
 
-export class Mat4<T, V extends BaseElement<T>> extends BaseElement<[T, T, T, T]> {
+export class Mat4<T extends number[], V extends VecN<T>> extends BaseElement<[T, T, T, T]> {
 
     readonly x: V
     readonly y: V
@@ -435,20 +430,20 @@ export class Mat4<T, V extends BaseElement<T>> extends BaseElement<[T, T, T, T]>
         this.w = clone(component, this.z.offset + this.z.paddedSize, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): [T, T, T, T] {
+    protected readOne(view: DataView, index: number): [T, T, T, T] {
         return [
-            this.x.readOne(view, index),
-            this.y.readOne(view, index),
-            this.z.readOne(view, index),
-            this.w.readOne(view, index),
+            this.x.read(view, index),
+            this.y.read(view, index),
+            this.z.read(view, index),
+            this.w.read(view, index),
         ]
     }
 
-    writeOne(view: DataView, index: number, value: [T, T, T, T]): void {
-        this.x.writeOne(view, index, value[0])
-        this.y.writeOne(view, index, value[1])
-        this.z.writeOne(view, index, value[2])
-        this.w.writeOne(view, index, value[3])
+    protected writeOne(view: DataView, value: [T, T, T, T], index: number): void {
+        this.x.write(view, value[0], index)
+        this.y.write(view, value[1], index)
+        this.z.write(view, value[2], index)
+        this.w.write(view, value[3], index)
     }
 
     clone(offset: number, stride: number, packed: boolean): Mat4<T, V> {
@@ -466,17 +461,17 @@ export class StaticArray<T, I extends Element<T>> extends BaseElement<T[]> {
         this.items = cloneItems<T, I>(item, length, this.offset, this.stride, packed)
     }
     
-    readOne(view: DataView, index: number): T[] {
+    protected readOne(view: DataView, index: number): T[] {
         const result: T[] = new Array<T>(this.items.length)
         for (let i = 0; i < this.items.length; i++) {
-            result[i] = this.items[i].readOne(view, index)
+            result[i] = this.items[i].read(view, index)
         }
         return result
     }
 
-    writeOne(view: DataView, index: number, value: T[]): void {
+    protected writeOne(view: DataView, value: T[], index: number): void {
         for (let i = 0; i < this.items.length; i++) {
-            this.items[i].writeOne(view, index, value[i])
+            this.items[i].write(view, value[i], index)
         }
     }
 
@@ -495,18 +490,18 @@ export class Struct<T extends Record<string, Element<any>>> extends BaseElement<
         this.members = cloneStruct(membersOrder, members, this.offset, this.stride, packed)
     }
 
-    writeOne(view: DataView, index: number, value: StructTypeOf<T>): void {
-        for (const key of this.membersOrder) {
-            this.members[key].writeOne(view, index, value[key])
-        }
-    }
-
-    readOne(view: DataView, index: number): StructTypeOf<T> {
+    protected readOne(view: DataView, index: number): StructTypeOf<T> {
         const result: Partial<StructTypeOf<T>> = {}
         for (const key of this.membersOrder) {
-            result[key] = this.members[key].readOne(view, index)
+            result[key] = this.members[key].read(view, index)
         }
         return result as StructTypeOf<T>
+    }
+
+    protected writeOne(view: DataView, value: StructTypeOf<T>, index: number): void {
+        for (const key of this.membersOrder) {
+            this.members[key].write(view, value[key], index)
+        }
     }
 
     clone(offset: number, stride: number, packed: boolean): Struct<T> {
@@ -549,11 +544,11 @@ function arraySize<T, I extends Element<T>>(item: I, length: number, packed: boo
 }
 
 function cloneItems<T, I extends Element<T>>(item: I, length: number, offset: number, stride: number, packed: boolean) {
-    const items = []
+    const items = new Array<I>(length)
     let itemOffset = offset
     for (let i = 0; i < length; i++) {
         const clonedItem = clone(item, itemOffset, stride, packed)
-        items.push(clonedItem)
+        items[i] = clonedItem
         itemOffset = clonedItem.offset + clonedItem.paddedSize
     }
     return items
@@ -574,11 +569,11 @@ function structSize<T extends Record<string, Element<any>>>(membersOrder: (keyof
     let result = 0
     for (const key of membersOrder) {
         const member = struct[key]
-        result = packed ? result : Math.ceil(result / member.alignment) * member.alignment 
+        result = packed ? result : alignTo(member.alignment, result)
         result += member.size    
     }
     const alignment = packed ? 1 : structAlignment(membersOrder, struct)
-    return Math.ceil(result / alignment) * alignment
+    return alignTo(alignment, result)
 }
 
 function cloneStruct<T extends Record<string, Element<any>>>(membersOrder: (keyof T)[], struct: T, offset: number, stride: number, packed: boolean): T {
@@ -604,15 +599,15 @@ export const i32 = new I32(0, 0, false)
 export const f32 = new F32(0, 0, false)
 
 export function vec2<T extends Primitive32>(component: T): Vec2<T> {
-    return new Vec2(component, 0, 0, false)
+    return component.x2
 }
 
 export function vec3<T extends Primitive32>(component: T): Vec3<T> {
-    return new Vec3(component, 0, 0, false)
+    return component.x3
 }
 
 export function vec4<T extends Primitive32>(component: T): Vec4<T> {
-    return new Vec4(component, 0, 0, false)
+    return component.x4
 }
 
 export const mat2x2 = vec2(f32).x2
@@ -635,4 +630,8 @@ export function packed<T extends Record<string, VertexElement<any>>>(membersOrde
 
 export function vertex<T extends Record<string, VertexElement<any>>>(members: T, membersOrder: (keyof T)[] = Object.keys(members)): Vertex<T> {
     return new Vertex(membersOrder, packed<T>(membersOrder, members))
+}
+
+function alignTo(alignment: number, size: number) {
+    return Math.ceil(size / alignment) * alignment
 }

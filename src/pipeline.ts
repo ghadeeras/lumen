@@ -2,7 +2,7 @@ import * as grp from "./group.js"
 import * as utl from "./utils.js"
 import { Device } from "./device.js"
 import { ShaderModule } from "./shader.js"
-import { ComputePassBuilder } from "./index.js"
+import { ComputePass, ComputePassBuilder } from "./index.js"
 
 export type CompatibleComputePipeline<L extends PipelineLayout> = ComputePipeline<InferPipelineLayoutDescriptor<L>>
 export type CompatiblePipelineEntries<L extends PipelineLayout> = PipelineEntries<InferPipelineLayoutDescriptor<L>>
@@ -118,7 +118,7 @@ export class ComputePipeline<D extends PipelineLayoutDescriptor> {
     }
 
     withGroups(groups: PipelineEntries<D>): ComputePassBuilder<D> {
-        return new ComputePassBuilder(this, groups)
+        return new ComputePass(this, groups)
     }
 
     static async instance<D extends PipelineLayoutDescriptor>(descriptor: ComputePipelineDescriptor<D>): Promise<ComputePipeline<D>> {

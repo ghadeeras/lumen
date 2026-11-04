@@ -15,8 +15,8 @@ export class CommandEncoder {
         return this.wrapped.finish()
     }
 
-    computePass<T>(passSetter: (pass: GPUComputePassEncoder) => T): T {
-        const pass = this.wrapped.beginComputePass()
+    computePass<T>(label: string, passSetter: (pass: GPUComputePassEncoder) => T): T {
+        const pass = this.wrapped.beginComputePass({ label })
         try {
             return passSetter(pass)
         } finally {
@@ -58,14 +58,36 @@ export abstract class Pass<E extends GPUComputePassEncoder | GPURenderPassEncode
 
 }
 
-export class ComputePass extends Pass<GPUComputePassEncoder> {
+export class ComputePass<D extends pln.PipelineLayoutDescriptor> extends Pass<GPUComputePassEncoder> implements ComputePassBuilder<D> {
 
-    constructor(device: Device, label: string, private encoding: (passEncoder: GPUComputePassEncoder) => void) {
-        super(device, label)
+    constructor(
+        private pipeline: pln.ComputePipeline<D>, 
+        private groups: Partial<pln.PipelineEntries<D>>, 
+        private encoding: (passEncoder: GPUComputePassEncoder) => void = pass => pipeline.addTo(pass, groups)
+    ) {
+        super(pipeline.layout.device, pipeline.label + ".pass")
     }
 
     protected pass(label: string, encoder: CommandEncoder, encoding: (passEncoder: GPUComputePassEncoder) => void): void {
-        encoder.computePass(encoding)
+        encoder.computePass(label, encoding)
+    }
+
+    withGroups(groups: pln.PipelineEntries<D>): ComputePassBuilder<D> {
+        return new ComputePass(this.pipeline, groups, 
+            pass => this.pipeline.addGroupsTo(this.inlineIn(pass), groups)
+        )
+    }
+
+    dispatchWorkGroups(workgroupCountX: number, workgroupCountY: number = 1, workgroupCountZ: number = 1): ComputePass<D> {
+        return new ComputePass(this.pipeline, this.groups,
+            pass => this.inlineIn(pass).dispatchWorkgroups(workgroupCountX, workgroupCountY, workgroupCountZ)
+        )
+    }
+
+    dispatchWorkGroupsIndirect(indirectBuffer: GPUBuffer, indirectOffset: number): ComputePass<D> {
+        return new ComputePass(this.pipeline, this.groups,
+            pass => this.inlineIn(pass).dispatchWorkgroupsIndirect(indirectBuffer, indirectOffset)
+        )
     }
 
     inlineIn(passEncoder: GPUComputePassEncoder): GPUComputePassEncoder {
@@ -75,25 +97,12 @@ export class ComputePass extends Pass<GPUComputePassEncoder> {
 
 }
 
-export class ComputePassBuilder<D extends pln.PipelineLayoutDescriptor> {
+export interface ComputePassBuilder<D extends pln.PipelineLayoutDescriptor> {
     
-    constructor(
-        private pipeline: pln.ComputePipeline<D>, 
-        private groups: Partial<pln.PipelineEntries<D>>
-    ) {}
+    withGroups(groups: pln.PipelineEntries<D>): ComputePassBuilder<D>
+    
+    dispatchWorkGroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): ComputePass<D>
 
-    dispatchWorkGroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): ComputePass {
-        return new ComputePass(this.pipeline.layout.device, this.pipeline.label, pass => this.init(pass)
-            .dispatchWorkgroups(workgroupCountX, workgroupCountY, workgroupCountZ))
-    }
-
-    dispatchWorkGroupsIndirect(indirectBuffer: GPUBuffer, indirectOffset: number): ComputePass {
-        return new ComputePass(this.pipeline.layout.device, this.pipeline.label, pass => this.init(pass)
-            .dispatchWorkgroupsIndirect(indirectBuffer, indirectOffset))
-    }
-
-    private init(pass: GPUComputePassEncoder) {
-        return this.pipeline.addTo(pass, this.groups)
-    }
+    dispatchWorkGroupsIndirect(indirectBuffer: GPUBuffer, indirectOffset: number): ComputePass<D>
 
 }

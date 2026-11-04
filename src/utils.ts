@@ -13,19 +13,19 @@ export interface Resource<R extends DataBuffer | Texture | Sampler> {
 }
 
 export type TextureFormatSource =
-    GPUColorTargetState |
-    GPUTextureFormat |
-    Texture |
-    Canvas
+    | GPUColorTargetState
+    | GPUTextureFormat
+    | Texture
+    | Canvas
 
 export type TypedArray = 
-    Float32Array |
-    Int32Array |
-    Int16Array |
-    Int8Array |
-    Uint32Array |
-    Uint16Array |
-    Uint8Array
+    | Float32Array
+    | Int32Array
+    | Int16Array
+    | Int8Array
+    | Uint32Array
+    | Uint16Array
+    | Uint8Array
 
 export type Only<T, K extends keyof T> = {
     [k in K]: T[k] 

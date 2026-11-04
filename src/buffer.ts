@@ -112,13 +112,13 @@ export abstract class AbstractBuffer implements BaseBuffer {
 }
 
 export interface SourceBuffer extends BaseBuffer {
-    copy(segment?: typ.DataSegment): DestinationClause<void>
-    set(segment?: typ.DataSegment): BufferWriter
+    copy(segment?: typ.AddressSegment): DestinationClause<void>
+    set(segment?: typ.AddressSegment): BufferWriter
 }
 
 export interface DestinationBuffer extends BaseBuffer {
-    copy(segment?: typ.DataSegment): SourceClause<void>
-    get(segment?: typ.DataSegment): BufferReader
+    copy(segment?: typ.AddressSegment): SourceClause<void>
+    get(segment?: typ.AddressSegment): BufferReader
 }
 
 export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffer>, SourceBuffer, DestinationBuffer {
@@ -135,7 +135,7 @@ export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffe
         return this
     }
 
-    copy(segment: typ.DataSegment = {}): DestinationClause<void> & SourceClause<void> {
+    copy(segment: typ.AddressSegment = {}): DestinationClause<void> & SourceClause<void> {
         return {
             ...copy(segment.size).from(this, segment.offset),
             ...copy(segment.size).to(this, segment.offset),
@@ -150,7 +150,7 @@ export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffe
         }
     }
 
-    set(bufferSegment: typ.DataSegment = {}): BufferWriter {
+    set(bufferSegment: typ.AddressSegment = {}): BufferWriter {
         return {
             fromData: async (data, dataOffset = 0) => {
                 const bufferOffset = bufferSegment.offset ?? 0
@@ -165,7 +165,7 @@ export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffe
         }
     }
 
-    get(bufferSegment: typ.DataSegment = {}): BufferReader {
+    get(bufferSegment: typ.AddressSegment = {}): BufferReader {
         return {
             asData: async (data, dataOffset = 0) => {
                 const dataSize = data?.byteLength ?? this.size
@@ -182,7 +182,7 @@ export class DataBuffer extends AbstractBuffer implements utl.Resource<DataBuffe
         }
     }
 
-    view(segment: typ.DataSegment): DataBufferView {
+    view(segment: typ.AddressSegment): DataBufferView {
         return new DataBufferView(this, segment)
     }
 
@@ -215,7 +215,7 @@ export type DataBufferDescriptor = {
 
 export class DataBufferView implements utl.Resource<DataBuffer> {
 
-    constructor(readonly gpuBuffer: DataBuffer, readonly segment: typ.DataSegment) {}
+    constructor(readonly gpuBuffer: DataBuffer, readonly segment: typ.AddressSegment) {}
     
     get label(): string {
         return this.gpuBuffer.label
@@ -242,11 +242,11 @@ export class ReadBuffer extends AbstractBuffer implements DestinationBuffer {
         super(device, newBlankBuffer(device, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST, size, label))
     }
 
-    copy(bufferSegment: typ.DataSegment = {}): SourceClause<void> {
+    copy(bufferSegment: typ.AddressSegment = {}): SourceClause<void> {
         return copy(bufferSegment.size).to(this, bufferSegment.offset)
     }
 
-    get(bufferSegment: typ.DataSegment = {}): BufferReader {
+    get(bufferSegment: typ.AddressSegment = {}): BufferReader {
         return {
             asData: async (data?: DataView, dataOffset = 0) => {
                 const bufferOffset = bufferSegment.offset ?? 0
@@ -283,11 +283,11 @@ export class WriteBuffer extends AbstractBuffer implements SourceBuffer {
         super(device, newInitializedBuffer(device, GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC, data, label))
     }
 
-    copy(bufferSegment: typ.DataSegment = {}): DestinationClause<void> {
+    copy(bufferSegment: typ.AddressSegment = {}): DestinationClause<void> {
         return copy(bufferSegment.size).from(this, bufferSegment.offset)
     }
 
-    set(bufferSegment: typ.DataSegment = {}): BufferWriter {
+    set(bufferSegment: typ.AddressSegment = {}): BufferWriter {
         return {
             fromData: async (data, dataOffset = 0) => {
                 const bufferOffset = bufferSegment.offset ?? 0
