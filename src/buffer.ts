@@ -8,6 +8,8 @@ export class SyncBuffer implements utl.Resource<DataBuffer> {
 
     private dirtyRange: [number, number]
 
+    private timeout: number | null = null;
+
     private constructor(readonly gpuBuffer: DataBuffer, readonly cpuBuffer: DataView) {
         this.dirtyRange = [cpuBuffer.byteLength, 0]
     }
@@ -37,9 +39,17 @@ export class SyncBuffer implements utl.Resource<DataBuffer> {
         this.dirty(element.range(index))
     }
 
+    sync() {
+        if (this.timeout !== null) {
+            clearTimeout(this.timeout)
+            this.timeout = null
+            this.clean()
+        }
+    }
+
     private dirty(range: [number, number]) {
         if (this.dirtyRange[0] > this.dirtyRange[1]) {
-            setTimeout(() => this.clean())
+            this.timeout = setTimeout(() => this.clean())
         }
         if (range[0] < this.dirtyRange[0]) {
             this.dirtyRange[0] = range[0]
